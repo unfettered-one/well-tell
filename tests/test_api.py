@@ -38,6 +38,10 @@ class FakeOpenCode:
 
 
 def test_http_sessions_logging_privacy_and_restart(db_copy):
+    with sqlite3.connect(db_copy) as conn:
+        test_dataset_loaded = conn.execute(
+            "SELECT 1 FROM wells WHERE dataset_id='test' LIMIT 1").fetchone() is not None
+
     async def scenario():
         bridge = FakeOpenCode()
         app = create_app(db_copy, bridge)
@@ -55,8 +59,12 @@ def test_http_sessions_logging_privacy_and_restart(db_copy):
             assert '"dataset_id": "sample"' in bridge.prompts[0][1]
             body["user_id"] = "U-202"
             assert (await client.post("/chat", json=body)).status_code == 403
+            body["user_id"] = "U-201"
             body["dataset_id"] = "test"
-            assert (await client.post("/chat", json=body)).status_code == 404
+            # If present, the test dataset is loaded but the existing sample
+            # conversation cannot be switched in place; otherwise it is absent.
+            expected = 403 if test_dataset_loaded else 404
+            assert (await client.post("/chat", json=body)).status_code == expected
             assert (await client.post("/chat", json={"user_id": "a", "question": "  "})).status_code == 422
         # Fresh API instance reuses the durable mapping.
         bridge2 = FakeOpenCode()

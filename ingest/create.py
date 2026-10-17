@@ -8,7 +8,7 @@ Three layers (database_plan.md §1):
 Run-time tables are created EMPTY here; ingest never touches them.
 """
 
-INGEST_VERSION = "1.0.0"
+INGEST_VERSION = "1.1.0"
 
 DDL = [
     # ---------- fleet dimensions ----------
@@ -52,7 +52,25 @@ DDL = [
         last_inspection_id TEXT,
         last_inspection_at TEXT,
         recorded_status    TEXT,
+        status             TEXT,
+        decommissioned_on  TEXT,
         PRIMARY KEY (dataset_id, asset_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS well_type_history (
+        dataset_id TEXT NOT NULL,
+        asset_id   TEXT NOT NULL,
+        well_type  TEXT NOT NULL,
+        valid_from TEXT,
+        valid_to   TEXT,
+        PRIMARY KEY (dataset_id, asset_id, valid_from)
+    )""",
+    """CREATE TABLE IF NOT EXISTS well_team_history (
+        dataset_id TEXT NOT NULL,
+        asset_id   TEXT NOT NULL,
+        team_id    TEXT NOT NULL,
+        valid_from TEXT,
+        valid_to   TEXT,
+        PRIMARY KEY (dataset_id, asset_id, valid_from)
     )""",
     """CREATE TABLE IF NOT EXISTS equipment (
         dataset_id   TEXT NOT NULL,
@@ -78,6 +96,7 @@ DDL = [
         spill_est_volume_bbl REAL,
         evidence_images_json TEXT,
         notes                TEXT,
+        recorded_at          TEXT,
         PRIMARY KEY (dataset_id, inspection_id)
     )""",
     """CREATE TABLE IF NOT EXISTS maintenance (
@@ -98,6 +117,8 @@ DDL = [
         cost_total                 REAL,
         triggered_by_inspection_id TEXT,
         report_file                TEXT,
+        recorded_at                TEXT,
+        cost_revision_json         TEXT,
         PRIMARY KEY (dataset_id, maintenance_id)
     )""",
     """CREATE TABLE IF NOT EXISTS report_facts (
@@ -108,6 +129,8 @@ DDL = [
         rca_action_required  INTEGER,
         spill_class          TEXT,
         root_cause           TEXT,
+        parts_installed      TEXT,
+        follow_up            TEXT,
         extraction_status    TEXT,
         PRIMARY KEY (dataset_id, maintenance_id)
     )""",
@@ -137,6 +160,9 @@ DDL = [
         text           TEXT,
         valid_from     TEXT,
         valid_to       TEXT,
+        field          TEXT,
+        original_value TEXT,
+        corrected_value TEXT,
         PRIMARY KEY (dataset_id, note_id)
     )""",
     # ---------- corrections: the ONE effective layer ----------
@@ -251,6 +277,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_rules_param      ON rules(dataset_id, parameter)",
     "CREATE INDEX IF NOT EXISTS idx_wells_area       ON wells(dataset_id, area_id)",
     "CREATE INDEX IF NOT EXISTS idx_rf_insp          ON report_facts(dataset_id, inspection_id)",
+    "CREATE INDEX IF NOT EXISTS idx_type_history     ON well_type_history(dataset_id, asset_id, valid_from)",
+    "CREATE INDEX IF NOT EXISTS idx_team_history     ON well_team_history(dataset_id, asset_id, valid_from)",
 ]
 
 # Ingested tables, in dependency order. Replace-per-dataset deletes from these only.
@@ -261,6 +289,8 @@ INGESTED_TABLES = [
     "maintenance",
     "inspections",
     "equipment",
+    "well_type_history",
+    "well_team_history",
     "wells",
     "corrections",   # only rows with dataset_id = <id> (runtime rows have NULL, kept)
     "documents",
@@ -275,6 +305,22 @@ def create_schema(conn):
     """Create all tables + indexes. Idempotent (IF NOT EXISTS)."""
     for stmt in DDL:
         conn.execute(stmt)
+    # Existing databases are upgraded in place; the ingest uses explicit column
+    # lists, so appending columns here does not change the meaning of old rows.
+    migrations = {
+        "wells": {"status": "TEXT", "decommissioned_on": "TEXT"},
+        "inspections": {"recorded_at": "TEXT"},
+        "maintenance": {"recorded_at": "TEXT", "cost_revision_json": "TEXT"},
+        "report_facts": {"parts_installed": "TEXT", "follow_up": "TEXT"},
+        "context_notes": {
+            "field": "TEXT", "original_value": "TEXT", "corrected_value": "TEXT",
+        },
+    }
+    for table, columns in migrations.items():
+        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, sql_type in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
     for stmt in INDEXES:
         conn.execute(stmt)
     conn.commit()

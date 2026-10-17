@@ -14,7 +14,9 @@ python ingest/ingest.py \
     --db data/well_copilot.db
 
 # load the test dataset alongside the sample (final 2 hours)
-python ingest/ingest.py --data <path-to-test-data> --dataset test --db data/well_copilot.db
+python ingest/ingest.py \
+    --data dataset/flytbase-ahc-swe-asset-intelligence-dataset/test-data/dataset \
+    --dataset test --as-of 2027-01-15 --db data/well_copilot.db
 
 # full rebuild from scratch
 python ingest/ingest.py --data <path> --dataset sample --db data/well_copilot.db --fresh
@@ -44,6 +46,11 @@ python ingest/ingest.py --data <path> --dataset sample --db data/well_copilot.db
   expected rule key must be found (hard-fail naming rule + file otherwise); on the
   sample, values must match the known set. `--allow-override` is the escape hatch:
   an unmatchable rule is inserted as a known row with `is_overridden=1`.
+- **Expanded test data** — all Markdown files under `fleet/` are cataloged;
+  T500 thresholds and its ESP-specific RCA trigger are parsed from its manual.
+  Structured `data_correction` notes, type/team histories, late-entry timestamps,
+  cost revisions, and report parts/follow-up sections are retained in queryable
+  columns/tables. Existing databases are upgraded in place by `create_schema`.
 - **Verification gate** — row counts, FK orphans, report-file resolution,
   extraction coverage, rule cross-checks, and (sample only) the golden answers
   from `03-evaluation-queries.md` (Q2/Q4/Q5/Q6/Q10/Q18 + rules snapshot), run

@@ -152,7 +152,7 @@ def read_report(conn: sqlite3.Connection, maintenance_id: str, dataset_id: str |
     info["content"] = target.read_text(encoding="utf-8")
     facts = conn.execute(
         "SELECT contained_hours_after, rca_action_required, spill_class, "
-        "       root_cause, extraction_status "
+        "       root_cause, parts_installed, follow_up, extraction_status "
         "FROM report_facts WHERE dataset_id = ? AND maintenance_id = ?",
         (info["dataset_id"], maintenance_id)).fetchone()
     info["report_facts"] = dict(facts) if facts else None
