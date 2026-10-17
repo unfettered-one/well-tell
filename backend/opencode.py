@@ -13,6 +13,8 @@ import os
 import sys
 from pathlib import Path
 
+from backend.visuals import Visual
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -25,8 +27,6 @@ class OpenCode:
         self.model = model
         self.timeout = timeout
         self._prepared = False
-        self.location = db.parent / (db.stem + "_opencode")
-        self.location.mkdir(parents=True, exist_ok=True)
         config = json.loads((ROOT / "opencode.json").read_text())
         config["snapshots"] = False
         config["agents"]["copilot"]["system"] = (ROOT / "backend/agent.md").read_text()
@@ -40,6 +40,13 @@ class OpenCode:
             )).hexdigest()[:12],
         ]
         config["mcp"]["servers"]["well"]["cwd"] = str(ROOT)
+        # OpenCode caches location services. Editing a config in the same
+        # already-loaded location need not refresh its agent prompt. Give each
+        # managed config revision a stable location instead of globally reloading
+        # OpenCode (which would disrupt unrelated sessions/forms).
+        revision = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
+        self.location = db.parent / (db.stem + "_opencode") / revision
+        self.location.mkdir(parents=True, exist_ok=True)
         (self.location / "opencode.json").write_text(json.dumps(config, indent=2))
 
     async def request(self, method: str, path: str, body=None):
@@ -69,7 +76,11 @@ class OpenCode:
         try:
             return json.loads(stdout)
         except ValueError as exc:
-            raise UpstreamError("OpenCode returned invalid API JSON") from exc
+            # Only structural diagnostics, never raw stdout/provider content.
+            raise UpstreamError(
+                f"OpenCode returned invalid API JSON for {method} {path} "
+                f"({len(stdout)} bytes, parse position {getattr(exc, 'pos', 'unknown')})"
+            ) from exc
 
     async def prepare(self):
         """Wait for location-scoped MCP discovery before the first model turn."""
@@ -182,6 +193,8 @@ def parse_answer(messages: list[dict]) -> dict:
                 or not isinstance(visual.get("data"), list)
                 or not all(isinstance(row, dict) for row in visual["data"])):
             raise ValueError
+        if visual is not None:
+            Visual.model_validate(visual)
     except (ValueError, KeyError, TypeError) as exc:
         raise UpstreamError("Model returned malformed answer JSON; retry or select another free model") from exc
     evidence_text = "\n".join(evidence)

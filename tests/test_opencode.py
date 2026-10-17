@@ -6,6 +6,7 @@ import json
 import pytest
 
 from backend.opencode import OpenCode, UpstreamError, parse_answer
+import backend.opencode as bridge_module
 
 
 def test_v2_create_model_and_private_config(tmp_path):
@@ -25,6 +26,14 @@ def test_v2_create_model_and_private_config(tmp_path):
     assert config["mcp"]["servers"]["well"]["codemode"] is False
     assert config["snapshots"] is False
     assert "Output contract" in config["agents"]["copilot"]["system"]
+    # The semantic/clarification guide is loaded as system instructions on every
+    # bridge startup, not an optional skill the agent might forget to activate.
+    system = config["agents"]["copilot"]["system"]
+    assert "Understand the question before choosing data" in system
+    assert "ASK one concise, targeted follow-up" in system
+    assert "date(completed_at)" in system
+    assert "Representative report reads" in system
+    assert "1500" not in system and "1509" not in system
 
 
 def test_turn_pagination_excludes_previous_answers(tmp_path):
@@ -95,3 +104,26 @@ def test_failed_mcp_does_not_start_a_model(tmp_path):
 
     with pytest.raises(UpstreamError, match="failed to connect"):
         asyncio.run(Failed(tmp_path / "db.sqlite", "provider/model").create("question"))
+
+
+def test_prompt_revision_does_not_reuse_a_stale_location(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    (root / "backend").mkdir(parents=True)
+    (root / "mcp").mkdir()
+    (root / "opencode.json").write_text(json.dumps({
+        "agents": {"copilot": {}}, "mcp": {"servers": {"well": {}}},
+    }))
+    prompt = root / "backend/agent.md"
+    prompt.write_text("First domain guide")
+    (root / "mcp/server.py").write_text("# Test server source")
+    monkeypatch.setattr(bridge_module, "ROOT", root)
+    first = OpenCode(tmp_path / "data/db.sqlite", "provider/model")
+    same = OpenCode(tmp_path / "data/db.sqlite", "provider/model")
+    assert first.location == same.location
+    prompt.write_text("Updated domain guide with clarification")
+    updated = OpenCode(tmp_path / "data/db.sqlite", "provider/model")
+    assert first.location != updated.location
+    old = json.loads((first.location / "opencode.json").read_text())
+    new = json.loads((updated.location / "opencode.json").read_text())
+    assert old["agents"]["copilot"]["system"] == "First domain guide"
+    assert new["agents"]["copilot"]["system"] == "Updated domain guide with clarification"

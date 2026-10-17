@@ -53,7 +53,12 @@ def check_case(name, data, expected, visual):
             "Northeast Block 7": [5,3,2,4,6,6,2,4,4,1],
             "Northeast Block 8": [4,4,4,3,2,4,4,0,1,0],
         }
-        x, y, value = spec.get("x", "month"), spec.get("y", "area_name"), spec.get("value", "spill_count")
+        # Both historical explicit string mappings and the UI's typed fields.
+        def field(mapping, default):
+            return mapping.get("field", default) if isinstance(mapping, dict) else mapping or default
+        x = field(spec.get("column", spec.get("x")), "month")
+        y = field(spec.get("row", spec.get("y")), "area_name")
+        value = field(spec.get("value"), "spill_count")
         cells = {(r.get(y), str(r.get(x))): r.get(value) for r in spec.get("data", [])}
         for area, values in matrix.items():
             for month, count in enumerate(values, 1):

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from backend.opencode import ROOT, OpenCode, UpstreamError, parse_answer
@@ -87,6 +88,13 @@ def create_app(db_path: Path | None = None, bridge=None) -> FastAPI:
         with closing(connect(db_path)) as conn:
             datasets = [dict(r) for r in conn.execute(
                 "SELECT dataset_id, COUNT(*) AS wells FROM wells GROUP BY dataset_id")]
+            for dataset in datasets:
+                dataset["users"] = [dict(r) for r in conn.execute(
+                    "SELECT user_id, name, role FROM users WHERE dataset_id=? ORDER BY name, user_id",
+                    (dataset["dataset_id"],))]
+                date = conn.execute("SELECT value FROM meta WHERE key=?",
+                                    ("as_of_" + dataset["dataset_id"],)).fetchone()
+                dataset["as_of"] = date[0] if date else None
         return {"status": "ok", "datasets": datasets}
 
     @api.get("/ready")
@@ -151,13 +159,18 @@ def create_app(db_path: Path | None = None, bridge=None) -> FastAPI:
                          sorted(set(re.findall(r"WELL-\d{4}", body.question + json.dumps(result)))))
             return {"session_id": session, **result}
         except TimeoutError as exc:
-            raise HTTPException(504, "Model timed out; retry or select another OPENCODE_MODEL") from exc
+            raise HTTPException(504, "Model timed out. Tool writes may already have committed; verify before resubmitting.") from exc
         except UpstreamError as exc:
             raise HTTPException(502, str(exc)) from exc
         finally:
             with closing(connect(db_path)) as conn:
                 conn.execute("UPDATE backend_conversations SET busy_until=0 WHERE session_id=?", (session,))
                 conn.commit()
+
+    # Optional built UI, served same-origin. API routes above retain priority.
+    ui_dist = ROOT / "UI" / "dist"
+    if ui_dist.is_dir():
+        api.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
 
     return api
 

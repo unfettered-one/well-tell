@@ -56,9 +56,39 @@ identity-bound MCP recall across that user's chats.
 - `GET /docs`: interactive HTTP schema.
 - `POST /chat`: question plus user/conversation/dataset context.
 
+## Chat UI
+
+The connected frontend lives in [`UI/`](UI/README.md). With FastAPI running on
+port 8000, run `npm ci` then `npm run dev` from `UI/` and open
+**http://127.0.0.1:5173**. It supports session-aware chat, dataset/user selection,
+Markdown, exact citation chips, and all six inline visual types.
+
+For same-origin serving, run `npm run build` in `UI/`, then start/restart FastAPI
+and open **http://127.0.0.1:8000/**. `/health` now also includes actual per-dataset
+users and evaluation dates. See the UI README for visual mappings, safety
+boundaries, frontend tests, and disposable-database live verification.
+
 Visuals are specifications, not rendered images:
 `{"type":"status_card|table|line|bar|map|heatmap","title":"...","data":[...]}`.
 The frontend renders them. Short answers may return `visual: null`.
+
+### Understanding and clarification
+
+`backend/agent.md` contains the always-loaded domain/interpretation guide. The
+agent distinguishes repair jobs from scheduled servicing, actual activities from
+equipment categories, and completed work from all recorded work. Completion uses
+the dataset cutoff, not the presence of a report or a future completion date.
+These are reusable interpretation rules, not answers keyed to the 18 scenarios.
+
+If a question is genuinely ambiguous, `/chat` returns a short clarification in
+`answer`, with `visual: null` and no invented numbers. Send the user's reply with
+the **same `session_id`** to continue the original question. Clear questions are
+answered directly with important assumptions stated. There is no second model
+call or optional skill activation step. Restart an already running API after
+editing its agent instructions so its generated OpenCode config is refreshed.
+Start a new conversation after that restart. Config revisions use distinct
+OpenCode locations to avoid cached old prompts without disrupting unrelated
+sessions; existing conversations retain their original OpenCode location.
 
 ## Tests
 
@@ -81,6 +111,10 @@ The frontend renders them. Short answers may return `visual: null`.
 # Optional: hit a running Uvicorn instance over TCP instead of ASGI.
 # Start that API with WELL_COPILOT_DB=data/eval.db first.
 .venv/bin/python eval.py --db data/eval.db --api-url http://127.0.0.1:8000 --only Q1
+
+# Additional live language/clarification checks; automatically backs up this DB
+# to a disposable copy, leaving the source conversations/domain records alone.
+.venv/bin/python eval_interpretation.py --db data/well_copilot.db
 ```
 
 `eval.py` sends real requests through the FastAPI ASGI app, invokes the selected
@@ -88,6 +122,14 @@ model through OpenCode, and checks facts, citations/tool usage and visual types.
 It exits nonzero for failures and saves full responses to `data/eval-results.json`.
 It is a deterministic smoke/keyword harness, **not proof of full semantic accuracy**;
 review the saved answers, especially conflict explanations and feedback scope.
+
+`eval_interpretation.py` derives reference counts independently with read-only
+SQL, then checks completed repairs versus recorded repairs versus completed
+services, ambiguous questions, a clarification follow-up in the same chat, and
+report-backed activity investigation. It saves answers and successful SQL tool
+evidence to `data/interpretation-results.json`. No reference counts are sent to
+the model. These observable checks are still not exhaustive semantic grading of
+every sentence or a complete audit of a generated repair-activity taxonomy.
 
 ## Loading new data
 
@@ -107,7 +149,7 @@ Default sample date is **2026-10-16**, independent of the wall clock.
   in `backend_conversations`; another user cannot reuse the same chat ID.
 - The API uses the supported `opencode api` CLI for authenticated V2 requests; no
   hardcoded service port or reading OpenCode's credential files.
-- It generates a private per-database config under `data/<db-name>_opencode/`.
+- It generates a private per-database config under `data/<db-name>_opencode/<config-revision>/`.
   The `copilot` agent denies shell/filesystem/other MCP tools and permits only
   `well_*`. MCP source revisions trigger server reconnection after code changes.
 - Private SQL tables are blocked from arbitrary `query_db`; recall and writes

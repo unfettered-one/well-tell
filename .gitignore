@@ -6,3 +6,8 @@ data/*
 .env
 .env.*
 !.env.example
+UI/node_modules/
+UI/dist/
+UI/test-results/
+UI/playwright-report/
+UI/*.tsbuildinfo
