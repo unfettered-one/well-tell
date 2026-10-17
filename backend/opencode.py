@@ -182,7 +182,16 @@ def parse_answer(messages: list[dict]) -> dict:
     if final.startswith("```json") and final.endswith("```"):
         final = final[7:-3].strip()
     try:
-        result = json.loads(final)
+        try:
+            result = json.loads(final)
+        except json.JSONDecodeError:
+            # Occasionally the model appends one extra closing brace after an
+            # otherwise complete JSON object. Recover only that exact case;
+            # prose or any other trailing payload remains a hard failure.
+            candidate = final.strip()
+            result, end = json.JSONDecoder().raw_decode(candidate)
+            if candidate[end:].strip() != "}":
+                raise ValueError("unexpected trailing content")
         if not isinstance(result, dict) or not isinstance(result.get("answer"), str) or not result["answer"].strip():
             raise ValueError
         citations = result["citations"]

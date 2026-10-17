@@ -97,6 +97,34 @@ def test_invalid_optional_display_mapping_does_not_discard_verified_answer():
     assert result["visual"]["x"]["field"] == "invented"
 
 
+def test_single_extra_closing_brace_is_recovered_but_other_trailing_text_is_rejected():
+    payload = {
+        "answer": "Recent temperature history",
+        "citations": ["INS-0001-0203"],
+        "visual": {
+            "type": "line",
+            "x": {"field": "inspected_at"},
+            "y": [{"field": "eff_temp_delta_c"}],
+            "data": [{"inspection_id": "INS-0001-0203"}],
+        },
+    }
+    messages = [{"type": "assistant", "content": [
+        {"type": "tool", "name": "well_recall", "state": {
+            "status": "completed", "content": [{"type": "text", "text": "{}"}]}},
+        {"type": "tool", "name": "well_query_db", "state": {
+            "status": "completed", "content": [{"type": "text", "text": "INS-0001-0203"}]}},
+        {"type": "text", "text": json.dumps(payload) + "}"},
+    ]}]
+
+    result = parse_answer(messages)
+    assert result["answer"] == payload["answer"]
+    assert result["visual"]["type"] == "line"
+
+    messages[0]["content"][-1]["text"] += " trailing prose"
+    with pytest.raises(UpstreamError, match="malformed answer JSON"):
+        parse_answer(messages)
+
+
 def test_cold_start_waits_for_mcp_catalog_before_model_creation(tmp_path):
     class Cold(OpenCode):
         calls = 0
