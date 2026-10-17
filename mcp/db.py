@@ -99,6 +99,9 @@ def rw_conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")  # already on from ingest; idempotent
     conn.execute("PRAGMA busy_timeout = 5000")
+    # Reserve the write transaction before next_id()/sanity checks. Concurrent
+    # users cannot allocate the same runtime ID between a read and an insert.
+    conn.execute("BEGIN IMMEDIATE")
     return conn
 
 

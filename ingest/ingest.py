@@ -575,7 +575,8 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
         fail(f"dataset '{dataset_id}' has no inspections")
     ds_as_of = (datetime.fromisoformat(max_insp.replace("Z", "+00:00")).date()
                 + timedelta(days=1)).isoformat()
-    create.set_meta(conn, f"as_of_{dataset_id}", ds_as_of)
+    create.set_meta(conn, f"as_of_{dataset_id}", as_of_opt or ds_as_of)
+    create.set_meta(conn, f"as_of_explicit_{dataset_id}", int(as_of_opt is not None))
 
     conn.commit()
 
@@ -604,20 +605,13 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
 
 
 def recompute_global_as_of(conn, as_of_opt):
-    """Global as_of = max over datasets of (max inspected_at + 1 day),
-    unless --as-of given."""
-    if as_of_opt:
-        create.set_meta(conn, "as_of", as_of_opt)
-        return as_of_opt
-    best = None
-    for row in conn.execute(
-            "SELECT MAX(inspected_at) FROM inspections").fetchall():
-        if row[0] and (best is None or row[0] > best):
-            best = row[0]
-    if best is None:
+    """Global as_of = max of active dataset evaluation dates, including overrides."""
+    dates = [create.get_meta(conn, f"as_of_{r[0]}") for r in conn.execute(
+        "SELECT DISTINCT dataset_id FROM wells")]
+    dates = [d for d in dates if d]
+    if not dates:
         fail("no inspections in DB; cannot compute as_of")
-    as_of = (datetime.fromisoformat(best.replace("Z", "+00:00")).date()
-             + timedelta(days=1)).isoformat()
+    as_of = max(dates)
     create.set_meta(conn, "as_of", as_of)
     return as_of
 
@@ -640,6 +634,13 @@ def main():
     ap.add_argument("--skip-verify", action="store_true",
                     help="skip the verification gate (never do this)")
     args = ap.parse_args()
+
+    if args.as_of:
+        try:
+            if datetime.strptime(args.as_of, "%Y-%m-%d").date().isoformat() != args.as_of:
+                raise ValueError
+        except ValueError:
+            ap.error("--as-of must be a valid YYYY-MM-DD date")
 
     data_root = Path(args.data)
     if not (data_root / "assets").is_dir() or not (data_root / "fleet").is_dir():

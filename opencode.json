@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agents": {
+    "copilot": {
+      "description": "Well intelligence grounded in SQLite views and dataset documents",
+      "mode": "primary",
+      "steps": 30,
+      "system": "{file:backend/agent.md}",
+      "permissions": [
+        {"action": "*", "resource": "*", "effect": "deny"},
+        {"action": "well_*", "resource": "*", "effect": "allow"},
+        {"action": "well_log_message", "resource": "*", "effect": "deny"}
+      ]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "well": {
+        "type": "local",
+        "command": [".venv/bin/python", "mcp/server.py"],
+        "codemode": false
+      }
+    }
+  }
+}

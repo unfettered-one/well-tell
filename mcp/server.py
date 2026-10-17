@@ -36,10 +36,10 @@ import documents  # noqa: E402
 import prompts  # noqa: E402
 
 try:  # mcp 1.x
-    from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.server.fastmcp import FastMCP as _Server, Context
     from mcp.server.fastmcp.exceptions import ToolError
 except ImportError:  # mcp >= 2 renamed FastMCP to MCPServer
-    from mcp.server.mcpserver import MCPServer as _Server
+    from mcp.server.mcpserver import MCPServer as _Server, Context
     from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp.types import ToolAnnotations  # noqa: E402
@@ -50,7 +50,46 @@ WRITE = ToolAnnotations(read_only_hint=False, idempotent_hint=False)
 MAX_ROWS = 50          # query_db cap (mcp_plan.md §4)
 MAX_RECALL_ROWS = 20   # per recall section
 
-app = _Server("well-copilot", instructions=prompts.SERVER_INSTRUCTIONS)
+app = _Server("well-copilot", instructions=prompts.SYSTEM_PROMPT)
+REQUIRE_SESSION = False
+
+
+def _binding(ctx: Context | None):
+    if not REQUIRE_SESSION:
+        return None
+    meta = ctx.request_context.meta if ctx else None
+    values = (meta if isinstance(meta, dict) else meta.model_dump(by_alias=True)) if meta else {}
+    session_id = values.get("ai.opencode/sessionID")
+    with closing(db.ro_conn()) as conn:
+        binding = conn.execute(
+            "SELECT user_id, dataset_id FROM backend_conversations WHERE opencode_id = ?",
+            (session_id,)).fetchone()
+    if not binding:
+        raise ToolError("No trusted API session binding for this request.")
+    return binding
+
+
+def _dataset(ctx: Context | None, dataset_id: str | None = None) -> str | None:
+    binding = _binding(ctx)
+    if binding:
+        if dataset_id and dataset_id != binding["dataset_id"]:
+            raise ToolError("dataset_id does not match the current conversation.")
+        return binding["dataset_id"]
+    return dataset_id
+
+
+def _identity(ctx: Context | None, user_id: str | None) -> str | None:
+    """Bind private operations to API-created sessions, not model-supplied IDs.
+
+    This is a local trusted-process boundary, not network authentication.
+    Standalone MCP keeps its explicit-user interface for other local clients.
+    """
+    owner = _binding(ctx)
+    if owner is None:
+        return user_id
+    if user_id and user_id != owner[0]:
+        raise ToolError("user_id does not match the current conversation owner.")
+    return owner[0]
 
 
 # ------------------------------------------------- prompt resources (prompts.py)
@@ -100,7 +139,10 @@ def _user_name(conn: sqlite3.Connection, user_id: str | None) -> str | None:
 
 def _as_float(label: str, text) -> float:
     try:
-        return float(str(text).strip())
+        value = float(str(text).strip())
+        if not math.isfinite(value):
+            raise ValueError
+        return value
     except (TypeError, ValueError):
         raise ToolError(f"{label} must be a number, got {text!r}.") from None
 
@@ -149,6 +191,11 @@ def query_db(sql: str) -> dict:
             f"statement (this connection is read-only).")
     try:
         with closing(db.ro_conn()) as conn:
+            # Private data must use identity-bound recall, never arbitrary SQL.
+            private = {"memories", "messages", "sessions", "backend_conversations"}
+            conn.set_authorizer(lambda action, table, *_:
+                sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table in private
+                else sqlite3.SQLITE_OK)
             cur = conn.execute(sql)
             if cur.description is None:
                 raise ToolError("that statement returns no rows — it is not a SELECT.")
@@ -280,6 +327,8 @@ def describe(name: str) -> dict:
     Ingested tables are keyed (dataset_id, <id>); runtime tables are not
     dataset-scoped. `v_*` views already apply rules + corrections.
     """
+    if name in {"memories", "messages", "sessions", "backend_conversations"}:
+        raise ToolError("private runtime data is accessible only through recall(user_id=...)")
     with closing(db.ro_conn()) as conn:
         row = conn.execute(
             "SELECT name, type FROM sqlite_master WHERE name = ?", (name,)).fetchone()
@@ -312,7 +361,7 @@ def describe(name: str) -> dict:
 
 
 @app.tool(annotations=READ_ONLY)
-def get_doc(path: str) -> dict:
+def get_doc(path: str, dataset_id: str | None = None, ctx: Context = None) -> dict:
     """Read a manual or SOP from the dataset, by catalog path (returns its text).
 
     `path` must be one from the `documents` table, e.g.
@@ -325,13 +374,13 @@ def get_doc(path: str) -> dict:
     """
     try:
         with closing(db.ro_conn()) as conn:
-            return documents.read_document(conn, path)
+            return documents.read_document(conn, path, _dataset(ctx, dataset_id))
     except documents.ResolveError as exc:
         raise ToolError(str(exc)) from None
 
 
 @app.tool(annotations=READ_ONLY)
-def get_report(maintenance_id: str) -> dict:
+def get_report(maintenance_id: str, dataset_id: str | None = None, ctx: Context = None) -> dict:
     """Read a repair report (markdown) by maintenance id, e.g. 'MNT-0082-028'.
 
     The file is resolved through SQL (maintenance.report_file + the dataset root)
@@ -344,7 +393,7 @@ def get_report(maintenance_id: str) -> dict:
     """
     try:
         with closing(db.ro_conn()) as conn:
-            return documents.read_report(conn, maintenance_id)
+            return documents.read_report(conn, maintenance_id, _dataset(ctx, dataset_id))
     except documents.ResolveError as exc:
         raise ToolError(str(exc)) from None
 
@@ -352,7 +401,7 @@ def get_report(maintenance_id: str) -> dict:
 @app.tool(annotations=READ_ONLY)
 def recall(query: str | None = None,
            well_id: str | None = None,
-           user_id: str | None = None) -> dict:
+           user_id: str | None = None, ctx: Context = None) -> dict:
     """Recall what has been learned: shared facts, the user's private memories,
     and unconfirmed claims — each row tagged shared / private / unconfirmed.
 
@@ -371,10 +420,31 @@ def recall(query: str | None = None,
 
     query: substring filter over the collected facts, memories and claims.
     """
+    user_id = _identity(ctx, user_id)
     with closing(db.ro_conn()) as conn:
         payload: dict = {"filters": {"query": query, "well_id": well_id,
-                                     "user_id": user_id}}
+                                      "user_id": user_id}}
         as_of = db.meta(conn, "as_of")
+
+        # Corrections are shared operational evidence, not private conversation.
+        # Return their attribution with well recall so runtime NULL-dataset rows
+        # cannot disappear behind a model's dataset_id='sample' audit query.
+        payload["corrections"] = []
+        if well_id:
+            dataset_id = _dataset(ctx)
+            sql = ("SELECT c.* FROM corrections c WHERE c.status='applied' "
+                   "AND (? IS NULL OR c.dataset_id=? OR c.dataset_id IS NULL) "
+                   "AND (c.asset_id=? OR c.inspection_id IN "
+                   "(SELECT inspection_id FROM inspections WHERE asset_id=? "
+                   "AND (? IS NULL OR dataset_id=?)) OR "
+                   "(c.asset_id IS NULL AND c.inspection_id IS NULL AND c.well_type IN "
+                   "(SELECT well_type FROM wells WHERE asset_id=?))) "
+                   "ORDER BY c.created_at DESC,c.rowid DESC LIMIT ?")
+            rows = conn.execute(sql, (dataset_id, dataset_id, well_id, well_id,
+                                      dataset_id, dataset_id, well_id, MAX_RECALL_ROWS)).fetchall()
+            payload["corrections"] = [{**dict(r), "author_name": _user_name(conn, r["author_user_id"]),
+                                        "visibility": "shared"} for r in rows]
+            payload["corrections_note"] = "Audit entries; the effective views decide which latest valid correction wins."
 
         # ---- shared facts (scope-filtered when well_id is given)
         types = []
@@ -553,7 +623,7 @@ def record_correction(field: str, original_value: str, corrected_value: str,
                       reason: str, asset_id: str | None = None,
                       inspection_id: str | None = None,
                       well_type_scope: str | None = None,
-                      author_user_id: str | None = None) -> dict:
+                      author_user_id: str | None = None, ctx: Context = None) -> dict:
     """Correct a stored inspection value (the write path with teeth).
 
     Use when a user states a stored value is wrong ("the 15 Oct reading for
@@ -572,6 +642,8 @@ def record_correction(field: str, original_value: str, corrected_value: str,
     contains the actual value and the query to re-resolve). The call returns
     the affected v_* view re-queried, so cite "now says ... per COR-<n>".
     """
+    author_user_id = _identity(ctx, author_user_id)
+    dataset_id = _dataset(ctx)
     field = (field or "").strip()
     if field not in SUPPORTED_CORRECTION_FIELDS:
         raise ToolError(
@@ -602,6 +674,9 @@ def record_correction(field: str, original_value: str, corrected_value: str,
             sql = (f"SELECT dataset_id, inspection_id, asset_id, inspected_at, "
                    f"       {field} AS live_value FROM inspections WHERE 1=1")
             params: list = []
+            if dataset_id:
+                sql += " AND dataset_id = ?"
+                params.append(dataset_id)
             if inspection_id:
                 sql += " AND inspection_id = ?"
                 params.append(inspection_id)
@@ -711,8 +786,8 @@ def _values_match(field: str, claimed, live) -> bool:
 
 @app.tool(annotations=WRITE)
 def remember(text: str, scope: str,
-             well_id: str | None = None, well_type: str | None = None,
-             user_id: str | None = None) -> dict:
+              well_id: str | None = None, well_type: str | None = None,
+              user_id: str | None = None, ctx: Context = None) -> dict:
     """Record what a user taught you — routing ladder rank 3/4.
 
     scope='well'|'well_type'|'fleet'  -> a SHARED fact every user sees (pass
@@ -729,6 +804,7 @@ def remember(text: str, scope: str,
     Do NOT use for: contradictions of a STORED value ("X is wrong, it's actually
     Y") -> record_correction; changes to a threshold RULE -> set_rule.
     """
+    user_id = _identity(ctx, user_id)
     text = (text or "").strip()
     if not text:
         raise ToolError("text is required (what should be remembered?).")
@@ -814,7 +890,8 @@ def remember(text: str, scope: str,
 
 @app.tool(annotations=WRITE)
 def set_rule(parameter: str, value: str, applies_to: str = "fleet",
-             author_user_id: str | None = None, reason: str | None = None) -> dict:
+              author_user_id: str | None = None, reason: str | None = None,
+              ctx: Context = None) -> dict:
     """Change a numeric threshold RULE for a well type (or the fleet) — the rule
     feedback path ("note for all T350 wells: RCA after 2 repairs, not 3").
 
@@ -827,14 +904,17 @@ def set_rule(parameter: str, value: str, applies_to: str = "fleet",
     Use this ONLY for threshold/rule changes. Correcting stored data is
     record_correction; unconfirmed opinions are remember(scope='claim').
     """
+    author_user_id = _identity(ctx, author_user_id)
     parameter = (parameter or "").strip()
     if not parameter:
         raise ToolError("parameter is required — e.g. 'rca_after_n_repairs'. See: "
                         "SELECT parameter, value, unit, applies_to FROM rules;")
     try:
-        float(str(value).strip())
+        number = float(str(value).strip())
+        if not math.isfinite(number) or number < 0:
+            raise ValueError
     except (TypeError, ValueError):
-        raise ToolError(f"value must be numeric, got {value!r}.") from None
+        raise ToolError(f"value must be a finite nonnegative number, got {value!r}.") from None
 
     with closing(db.rw_conn()) as conn:
         known_params = [r[0] for r in conn.execute(
@@ -902,7 +982,7 @@ def set_rule(parameter: str, value: str, applies_to: str = "fleet",
 
 @app.tool(annotations=WRITE)
 def log_message(session_id: str, user_id: str, role: str, content: str,
-                referenced_wells: list[str] | None = None) -> dict:
+                 referenced_wells: list[str] | None = None, ctx: Context = None) -> dict:
     """Log one conversational turn (call it every turn — user AND assistant).
 
     This is the cheapest possible conversation memory: it powers "the wells we
@@ -911,6 +991,7 @@ def log_message(session_id: str, user_id: str, role: str, content: str,
     (e.g. ['WELL-0121','WELL-0138']); pass the assistant's answer too, with the
     same wells. Creates the session row on first call.
     """
+    user_id = _identity(ctx, user_id)
     session_id = (session_id or "").strip()
     if not session_id:
         raise ToolError("session_id is required.")
@@ -928,6 +1009,10 @@ def log_message(session_id: str, user_id: str, role: str, content: str,
             wells.append(w)
 
     with closing(db.rw_conn()) as conn:
+        owner = conn.execute("SELECT user_id FROM sessions WHERE session_id = ?",
+                             (session_id,)).fetchone()
+        if owner and owner[0] != user_id:
+            raise ToolError("session belongs to another user")
         conn.execute(
             "INSERT INTO sessions(session_id, user_id, started_at, title) "
             "VALUES (?,?,?,?) "
@@ -954,11 +1039,15 @@ def log_message(session_id: str, user_id: str, role: str, content: str,
 
 
 def main(argv: list[str] | None = None) -> None:
+    global REQUIRE_SESSION
     ap = argparse.ArgumentParser(description="Well Copilot MCP server (stdio)")
     ap.add_argument("--db", default=None,
                     help="SQLite DB path (default: env WELL_COPILOT_DB, else "
-                         "data/well_copilot.db)")
+                          "data/well_copilot.db)")
+    ap.add_argument("--require-session", action="store_true",
+                    help="bind private operations to API-created OpenCode sessions")
     args, _unknown = ap.parse_known_args(argv)
+    REQUIRE_SESSION = args.require_session
     db.configure(args.db)
     if not db.db_path().exists():
         print(f"[well-copilot] WARNING: DB not found at {db.db_path()} — tool "

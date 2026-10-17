@@ -8,7 +8,7 @@ User question
      → OpenCode session (prompt endpoint) with our "copilot" agent
        → Agent (the LLM) reasons and calls tools from OUR well-copilot MCP server:
             query_db(sql)      → SQLite DB we built by ingesting the dataset
-            search_docs(q)     → FTS index over manuals/SOPs/reports/notes (same SQLite)
+            get_doc / get_report → cataloged manuals/SOPs and SQL-linked reports
             remember / recall  → shared facts + per-user memory (same SQLite)
             record_correction  → corrections with scope (same SQLite)
        → Agent writes the answer with citations (+ visual spec JSON)
@@ -37,9 +37,14 @@ FastAPI doesn't "call agents" in the plural sense — it creates/maintains **one
 
 | Piece | What it does |
 |---|---|
-| `ingest.py` | Reads sample-data/ (JSONL/JSON/MD) → SQLite tables + FTS5 index |
+| `ingest.py` | Reads sample-data/ (JSONL/JSON/MD) → SQLite tables + extracted report facts + document catalog (FTS removed per detailed ingest plan) |
 | `views.py` / SQL views | Domain logic: production status (temp delta ≥ 15/20 °C), downtime (7 days per failed inspection), corrected spills, etc. |
-| `mcp_server.py` | FastMCP server exposing `query_db`, `search_docs`, `get_doc`, `remember`, `recall`, `record_correction` |
-| `opencode.json` | Defines the `copilot` agent: system prompt with domain rules, citation + conflict rules, visual guidance; model = free OpenCode model; MCP server registered |
-| `api.py` | FastAPI: maps frontend requests → OpenCode sessions (one per user conversation); returns {answer, visual, citations} |
+| `mcp/server.py` | FastMCP/MCPServer exposing SQL/schema tools, document/report tools, recall, feedback, rule overrides and logging |
+| `opencode.json` + `backend/agent.md` | V2 `copilot` agent and MCP registration; model selected via `OPENCODE_MODEL`, currently connected GitHub Copilot because tested OpenCode free models return 403 |
+| `backend/api.py` + `backend/opencode.py` | FastAPI: durable per-user conversation mapping → authenticated OpenCode V2 CLI/API transport; returns {session_id, answer, visual, citations, tool_calls} |
 | `eval.py` | Runs the 18 example questions against expected answers → accuracy measurement |
+
+Implementation note: the V2 prompt endpoint admits input asynchronously. The bridge
+waits for the session to become idle, then reads only the admitted turn's messages
+(with pagination). Local tests and `eval.py` are separate: the former need no model,
+the latter make real provider calls and save responses for human review.

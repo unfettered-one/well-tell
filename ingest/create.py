@@ -183,6 +183,13 @@ DDL = [
         PRIMARY KEY (dataset_id, rule_id)
     )""",
     # ---------- runtime (written by MCP tools during chat; never by ingest) ----------
+    """CREATE TABLE IF NOT EXISTS backend_conversations (
+        session_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        opencode_id TEXT UNIQUE,
+        dataset_id TEXT NOT NULL,
+        busy_until REAL NOT NULL DEFAULT 0
+    )""",
     """CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
         user_id    TEXT,

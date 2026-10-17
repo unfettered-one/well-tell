@@ -30,6 +30,7 @@ for entry in ("", str(REPO)):
     while entry in sys.path:
         sys.path.remove(entry)
 sys.path.insert(0, str(MCP_DIR))
+sys.path.append(str(REPO))
 
 
 @pytest.fixture()

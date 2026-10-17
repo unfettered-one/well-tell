@@ -99,6 +99,12 @@ def test_values_match_and_canon():
     assert server._canon("wellhead_temp_c", 41) == "41.0"
 
 
+@pytest.mark.parametrize("value", ["NaN", "inf", "-inf"])
+def test_nonfinite_corrections_are_rejected(value):
+    with pytest.raises(server.ToolError):
+        server._as_float("corrected_value", value)
+
+
 # ------------------------------------------------- connection-level read-only
 
 

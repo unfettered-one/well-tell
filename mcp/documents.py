@@ -74,12 +74,13 @@ def _others(rows: list[sqlite3.Row], chosen: sqlite3.Row) -> list[str]:
 # --------------------------------------------------------------- documents
 
 
-def find_document(conn: sqlite3.Connection, path: str) -> dict:
+def find_document(conn: sqlite3.Connection, path: str, dataset_id: str | None = None) -> dict:
     """Resolve a cataloged doc path -> {dataset_id, doc_type, path, title}."""
     norm = normalize_path(path)
     rows = conn.execute(
         "SELECT dataset_id, doc_id, doc_type, path, title FROM documents "
-        "WHERE path = ?", (norm,)).fetchall()
+        "WHERE path = ? AND (? IS NULL OR dataset_id = ?)",
+        (norm, dataset_id, dataset_id)).fetchall()
     if not rows:
         base = norm.rsplit("/", 1)[-1]
         near = conn.execute(
@@ -101,9 +102,9 @@ def find_document(conn: sqlite3.Connection, path: str) -> dict:
     return out
 
 
-def read_document(conn: sqlite3.Connection, path: str) -> dict:
+def read_document(conn: sqlite3.Connection, path: str, dataset_id: str | None = None) -> dict:
     """Read a cataloged manual/SOP from disk."""
-    doc = find_document(conn, path)
+    doc = find_document(conn, path, dataset_id)
     root = dataset_root(conn, doc["dataset_id"])
     target = _safe_join(root, doc["path"])
     doc["file"] = str(target)
@@ -114,12 +115,13 @@ def read_document(conn: sqlite3.Connection, path: str) -> dict:
 # ----------------------------------------------------------------- reports
 
 
-def find_report(conn: sqlite3.Connection, maintenance_id: str) -> dict:
+def find_report(conn: sqlite3.Connection, maintenance_id: str, dataset_id: str | None = None) -> dict:
     """Resolve a maintenance id -> its report row (never build paths by hand)."""
     rows = conn.execute(
         "SELECT dataset_id, maintenance_id, asset_id, maintenance_type, "
         "       triggered_by_inspection_id, report_file "
-        "FROM maintenance WHERE maintenance_id = ?", (maintenance_id,)).fetchall()
+        "FROM maintenance WHERE maintenance_id = ? AND (? IS NULL OR dataset_id = ?)",
+        (maintenance_id, dataset_id, dataset_id)).fetchall()
     if not rows:
         raise ResolveError(
             f"'{maintenance_id}' is not a maintenance id in this database.\n"
@@ -141,9 +143,9 @@ def find_report(conn: sqlite3.Connection, maintenance_id: str) -> dict:
     return out
 
 
-def read_report(conn: sqlite3.Connection, maintenance_id: str) -> dict:
+def read_report(conn: sqlite3.Connection, maintenance_id: str, dataset_id: str | None = None) -> dict:
     """Read the repair report markdown from disk, plus its extracted facts."""
-    info = find_report(conn, maintenance_id)
+    info = find_report(conn, maintenance_id, dataset_id)
     root = dataset_root(conn, info["dataset_id"])
     target = _safe_join(root, f"assets/{info['asset_id']}/{info['report_file']}")
     info["file"] = str(target)

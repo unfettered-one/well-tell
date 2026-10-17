@@ -216,8 +216,10 @@ def verify_dataset(conn, c, dataset_id):
     if max_insp and ds_as_of:
         expect = (datetime.fromisoformat(max_insp.replace("Z", "+00:00")).date()
                   + timedelta(days=1)).isoformat()
-        c.check(ds_as_of == expect, f"as_of_{dataset_id} = max(inspected_at)+1d "
-                                    f"({ds_as_of})")
+        explicit = create.get_meta(conn, f"as_of_explicit_{dataset_id}") == "1"
+        c.check(explicit or ds_as_of == expect,
+                f"as_of_{dataset_id} = {'explicit evaluation date' if explicit else 'max(inspected_at)+1d'} "
+                f"({ds_as_of})")
 
 
 def verify_sample_golden(conn, c):
@@ -238,6 +240,9 @@ def verify_sample_golden(conn, c):
             print(f"  (baseline mode: {n_corr} runtime correction(s) and "
                   f"{n_rules} runtime rule override(s) hidden, rolled back after)")
 
+        # Time-dependent sample goldens describe the canonical evaluation day,
+        # not a user-supplied --as-of. Restore that date only for this rollback.
+        create.set_meta(conn, "as_of_sample", "2026-10-16")
         _golden_checks(conn, c, g)
     finally:
         conn.execute("ROLLBACK")
@@ -324,6 +329,8 @@ def run_all(conn, data_root=None):
     # global as_of stored in meta
     as_of = create.get_meta(conn, "as_of")
     c.check(as_of is not None, f"global as_of stored in meta ({as_of})")
+    c.check(as_of == max(create.get_meta(conn, f"as_of_{d}") or "" for d in datasets),
+            "global as_of equals the latest per-dataset evaluation date")
     if data_root is not None:
         c.check(str(Path(data_root).resolve()) in
                 [create.get_meta(conn, f"dataset_root_{d}") for d in datasets],

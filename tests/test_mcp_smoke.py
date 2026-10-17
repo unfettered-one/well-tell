@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -251,7 +252,12 @@ def test_correction_round_trip(db_copy):
             "SELECT dataset_id, source, valid_from, status FROM corrections "
             "WHERE correction_id='COR-RT-0001'"})
         assert c["rows"][0] == {"dataset_id": None, "source": "runtime",
-                                "valid_from": None, "status": "applied"}
+                                 "valid_from": None, "status": "applied"}
+
+        recalled = await call(session, "recall", {"well_id": "WELL-0164", "user_id": U_JESSICA})
+        audit = next(c for c in recalled["corrections"] if c["correction_id"] == out["correction_id"])
+        assert audit["author_name"] == "Michael Turner"
+        assert audit["corrected_value"] == "41.0"
     run(db_copy, scenario)
 
 
@@ -370,3 +376,38 @@ def test_rule_override_round_trip(db_copy):
                          {"parameter": "not_a_rule", "value": "1"})
         assert "unknown rule parameter" in err
     run(db_copy, scenario)
+
+
+def test_private_sql_and_session_ownership(db_copy):
+    async def scenario(session):
+        for table in ("memories", "sessions", "messages"):
+            err = await fail(session, "query_db", {"sql": f"SELECT * FROM {table}"})
+            assert "prohibited" in err or "authorized" in err
+        await call(session, "log_message", {"session_id": "owned", "user_id": U_MICHAEL,
+            "role": "user", "content": "private"})
+        err = await fail(session, "log_message", {"session_id": "owned", "user_id": U_JESSICA,
+            "role": "user", "content": "must not join another user session"})
+        assert "another user" in err
+    run(db_copy, scenario)
+
+
+def test_api_bound_identity_over_real_stdio(db_copy):
+    async def scenario():
+        with sqlite3.connect(db_copy) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS backend_conversations (session_id TEXT PRIMARY KEY, user_id TEXT, opencode_id TEXT, dataset_id TEXT, busy_until REAL)")
+            conn.execute("INSERT INTO backend_conversations VALUES ('chat-owner', ?, 'ses_bound', 'sample', 0)", (U_MICHAEL,))
+        params = StdioServerParameters(command=sys.executable,
+            args=[str(SERVER), "--db", str(db_copy), "--require-session"], cwd=str(REPO))
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                # SDK v1 uses a plain mapping, v2 accepts the same meta contract.
+                meta = {"ai.opencode/sessionID": "ses_bound"}
+                result = await session.call_tool("remember", {"text": "my private watchlist", "scope": "memory"}, meta=meta)
+                assert not result.is_error, _text(result)
+                assert _payload(result)["private_to_user_id"] == U_MICHAEL
+                wrong = await session.call_tool("recall", {"user_id": U_JESSICA}, meta=meta)
+                assert wrong.is_error and "owner" in _text(wrong)
+                missing = await session.call_tool("recall", {})
+                assert missing.is_error and "binding" in _text(missing)
+    asyncio.run(scenario())

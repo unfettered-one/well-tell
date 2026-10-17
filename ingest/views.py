@@ -38,14 +38,15 @@ def _corr_subquery(field):
                    AND c.well_type = w.well_type))
           AND (c.valid_from IS NULL OR c.valid_from <= {as_of_for('i.dataset_id')})
           AND (c.valid_to   IS NULL OR c.valid_to   >= {as_of_for('i.dataset_id')})
-        ORDER BY c.created_at DESC LIMIT 1
+        ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1
     )"""
 
 
 # Winner rule row for a parameter: overridden row wins, else the base row
 # (Q14 runtime override mechanism; the original row is kept, never deleted).
 def _rule_join(alias, dataset_col, param, well_col):
-    return f"""JOIN rules {alias} ON {alias}.rule_id = (
+    return f"""JOIN rules {alias} ON {alias}.dataset_id = {dataset_col}
+      AND {alias}.rule_id = (
         SELECT r3.rule_id FROM rules r3
         WHERE r3.dataset_id = {dataset_col}
           AND r3.parameter = '{param}'
@@ -174,6 +175,7 @@ JOIN v_inspection_effective e ON e.inspection_id = i.inspection_id
 CREATE VIEW v_downtime_findings AS
 SELECT
     e.dataset_id,
+    e.inspection_id,
     e.asset_id,
     w.well_type,
     w.area_id,
@@ -364,8 +366,11 @@ SELECT
                            AND re.related_inspection_id = sc.inspection_id
                            AND re.protocol_id = 'SR-01'
                            AND re.event_type = 'spill_report_filed')
-         THEN (CASE WHEN {as_of_for('sc.dataset_id')} > date(sc.discovered_at)
-                    THEN 'overdue' ELSE 'open' END)
+          THEN (CASE WHEN datetime({as_of_for('sc.dataset_id')}) > datetime(sc.discovered_at,
+                       '+' || (CASE WHEN sc.effective_class = 'major'
+                                THEN CAST(r_sr01m.value AS REAL)
+                                ELSE CAST(r_sr01.value AS REAL) END) || ' hours')
+                     THEN 'overdue' ELSE 'open' END)
        WHEN (SELECT MIN(re.hours_to_report) FROM regulatory_events re
               WHERE re.dataset_id = sc.dataset_id
                 AND re.related_inspection_id = sc.inspection_id
@@ -397,8 +402,9 @@ SELECT
     sc.contained_hours_after,
     (CASE
        WHEN sc.contained_hours_after IS NULL
-         THEN (CASE WHEN {as_of_for('sc.dataset_id')} > date(sc.discovered_at)
-                    THEN 'overdue' ELSE 'open' END)
+          THEN (CASE WHEN datetime({as_of_for('sc.dataset_id')}) > datetime(sc.discovered_at,
+                       '+' || CAST(r_sr02.value AS REAL) || ' hours')
+                     THEN 'overdue' ELSE 'open' END)
        WHEN sc.contained_hours_after > CAST(r_sr02.value AS REAL) THEN 'breached'
        ELSE 'met'
      END),
@@ -501,9 +507,10 @@ SELECT
     i.spill_detected AS raw_spill_detected,
     i.spill_est_volume_bbl AS raw_spill_volume_bbl,
     (SELECT c.correction_id FROM corrections c
-      WHERE c.dataset_id = n.dataset_id
-        AND c.inspection_id = i.inspection_id
-      LIMIT 1) AS superseding_correction_id
+      WHERE (c.dataset_id = n.dataset_id OR c.dataset_id IS NULL)
+         AND c.inspection_id = i.inspection_id
+         AND c.status = 'applied'
+      ORDER BY c.created_at DESC, c.rowid DESC LIMIT 1) AS superseding_correction_id
 FROM context_notes n
 JOIN wells w ON w.asset_id = n.asset_id AND w.dataset_id = n.dataset_id
 JOIN inspections i ON i.asset_id = n.asset_id AND i.dataset_id = n.dataset_id
@@ -519,7 +526,7 @@ WHERE n.note_type != 'correction'
 UNION ALL
 SELECT
     'claim_vs_inspection' AS conflict_type,
-    NULL AS dataset_id,
+    w.dataset_id,
     cl.asset_id,
     w.well_type,
     cl.claim_id   AS source_a_id,
@@ -534,9 +541,11 @@ SELECT
 FROM claims cl
 JOIN wells w ON w.asset_id = cl.asset_id
 JOIN inspections i ON i.asset_id = cl.asset_id
+ AND i.dataset_id = w.dataset_id
  AND i.inspected_at <= cl.created_at
  AND i.inspected_at = (SELECT MAX(i2.inspected_at) FROM inspections i2
-                        WHERE i2.asset_id = cl.asset_id
+                         WHERE i2.asset_id = cl.asset_id
+                           AND i2.dataset_id = i.dataset_id
                           AND i2.inspected_at <= cl.created_at)
 """,
 

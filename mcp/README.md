@@ -44,12 +44,21 @@ JSON-RPC over stdin/stdout.
 ```
 
 - Server `instructions` (from `prompts.py`) are added to OpenCode's system
-  prompt automatically as `<mcp_instructions>`.
+  prompt automatically as `<mcp_instructions>`; the complete behavioral contract
+  is supplied at initialization, so an agent need not fetch a prompt resource.
 - The prompt resources become commands: `/well-copilot:copilot_system_prompt`,
   `:routing_ladder`, `:answer_protocol` — the copilot agent's system prompt
   includes `copilot_system_prompt` verbatim.
 - Clients that honor tool annotations (`read_only_hint=true` on all six read
   tools) can skip approval prompts for reads.
+
+The repository also ships `opencode.json` and the HTTP bridge. API-created
+conversations start this server with `--require-session`: private recall and
+write attribution are bound to the stored OpenCode-session owner, using call
+metadata, rather than trusting a model-supplied user ID. `query_db` cannot read
+private `memories`, `messages`, `sessions` or `backend_conversations` tables.
+Standalone local MCP clients retain the explicit user_id interface.
+See the root [README](../README.md) for the local/trusted security boundary.
 
 ## Files
 

@@ -1,7 +1,7 @@
 # Ingest — Well Copilot
 
 Builds the single SQLite DB (`well_copilot.db`) from a dataset folder:
-raw tables + rules parsed from the dataset's own manuals/SOPs + the 8 derived
+raw tables + rules parsed from the dataset's own manuals/SOPs + the 11 derived
 views, then hard-fail verification. stdlib only — no pip deps.
 
 ## Run
@@ -38,7 +38,8 @@ python ingest/ingest.py --data <path> --dataset sample --db data/well_copilot.db
   re-inserts in one transaction. Idempotent; runtime tables untouched.
 - **`--fresh`** — delete the DB file first.
 - **`--as-of YYYY-MM-DD`** — the eval "today". Default: `max(inspected_at) + 1 day`
-  (sample → 2026-10-16). Stored in `meta`; views never use `date('now')`.
+  (sample → 2026-10-16). Stored per dataset in `meta.as_of_<dataset_id>`;
+  the global date is the latest dataset date. Views never use `date('now')`.
 - **Rules are parsed from the dataset's own docs** — nothing hardcoded. Every
   expected rule key must be found (hard-fail naming rule + file otherwise); on the
   sample, values must match the known set. `--allow-override` is the escape hatch:
