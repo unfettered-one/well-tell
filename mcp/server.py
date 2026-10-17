@@ -899,7 +899,8 @@ def set_rule(parameter: str, value: str, applies_to: str = "fleet",
     the manual's original row is kept, the override wins from then on. Parameter
     names come from the rules table — look before you write:
       SELECT rule_id, parameter, value, unit, applies_to FROM rules;
-    applies_to is 'fleet' or a well type ('T200', 'T350').
+    applies_to is 'fleet', a well type, or an equipment-specific scope such as
+    'T500:esp_pump'.
 
     Use this ONLY for threshold/rule changes. Correcting stored data is
     record_correction; unconfirmed opinions are remember(scope='claim').
@@ -969,13 +970,19 @@ def set_rule(parameter: str, value: str, applies_to: str = "fleet",
                      "the manual"),
         }
         if parameter == "rca_after_n_repairs":
+            if ":" in applies_to:
+                well_type, equipment_kind = applies_to.split(":", 1)
+                scope_sql = "WHERE well_type = ? AND equipment_kind = ?"
+                scope_params = (well_type, equipment_kind)
+            else:
+                scope_sql = "WHERE well_type = ? OR ? = 'fleet'"
+                scope_params = (applies_to, applies_to)
             rows, _ = _rows(conn,
                             "SELECT dataset_id, asset_id, well_name, well_type, "
                             "equipment_kind, corrective_count_window, "
                             "rca_after_n_repairs, rca_due FROM v_rca_due "
-                            "WHERE well_type = ? OR ? = 'fleet' "
-                            "ORDER BY asset_id, equipment_kind LIMIT 200",
-                            (applies_to, applies_to))
+                            + scope_sql + " ORDER BY asset_id, equipment_kind LIMIT 200",
+                            scope_params)
             payload["echo"] = {"v_rca_due": rows}
         return payload
 

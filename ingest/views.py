@@ -44,20 +44,30 @@ def _corr_subquery(field):
 
 # Winner rule row for a parameter: overridden row wins, else the base row
 # (Q14 runtime override mechanism; the original row is kept, never deleted).
-def _rule_join(alias, dataset_col, param, well_col):
+def _rule_join(alias, dataset_col, param, well_col, equipment_col=None):
+    if equipment_col:
+        equipment_scope = f"({well_col} || ':' || {equipment_col})"
+        scope_match = (f"r3.applies_to = {equipment_scope} OR "
+                       f"r3.applies_to = {well_col} OR r3.applies_to = 'fleet'")
+        scope_order = (f"CASE WHEN r3.applies_to = {equipment_scope} THEN 0 "
+                       f"WHEN r3.applies_to = {well_col} THEN 1 ELSE 2 END")
+    else:
+        scope_match = f"(r3.applies_to = {well_col} OR r3.applies_to = 'fleet')"
+        scope_order = f"CASE WHEN r3.applies_to = {well_col} THEN 0 ELSE 1 END"
     return f"""JOIN rules {alias} ON {alias}.dataset_id = {dataset_col}
       AND {alias}.rule_id = (
         SELECT r3.rule_id FROM rules r3
         WHERE r3.dataset_id = {dataset_col}
           AND r3.parameter = '{param}'
-          AND (r3.applies_to = {well_col} OR r3.applies_to = 'fleet')
-        ORDER BY r3.is_overridden DESC, r3.rowid DESC LIMIT 1)"""
+          AND ({scope_match})
+        ORDER BY {scope_order}, r3.is_overridden DESC, r3.rowid DESC LIMIT 1)"""
 
 
 R_PROD  = _rule_join("r_prod",  "w.dataset_id", "production_threshold", "w.well_type")
 R_DOWN  = _rule_join("r_down",  "w.dataset_id", "production_threshold", "w.well_type")
 R_DDF   = _rule_join("r_ddf",   "e.dataset_id", "downtime_days_per_finding", "'fleet'")
-R_RCA   = _rule_join("r_rca",   "m.dataset_id", "rca_after_n_repairs", "w.well_type")
+R_RCA   = _rule_join("r_rca",   "m.dataset_id", "rca_after_n_repairs", "w.well_type",
+                     equipment_col="m.equipment_kind")
 R_LB    = _rule_join("r_lb",    "m.dataset_id", "rca_lookback_months", "'fleet'")
 R_SR01  = _rule_join("r_sr01",  "sc.dataset_id", "sr01_hours", "'fleet'")
 R_SR01M = _rule_join("r_sr01m", "sc.dataset_id", "sr01_major_hours", "'fleet'")
@@ -135,6 +145,8 @@ SELECT
     w.area_id,
     a.name            AS area_name,
     w.recorded_status,
+    w.status           AS asset_status,
+    w.decommissioned_on,
     i.inspection_id   AS latest_inspection_id,
     i.inspected_at    AS latest_inspection_at,
     i.inspector_user_id AS last_inspector_user_id,
@@ -144,11 +156,18 @@ SELECT
     e.eff_temp_delta_c,
     e.notes           AS latest_inspector_notes,
     CAST(r_prod.value AS REAL) AS production_threshold_c,
-    (e.eff_temp_delta_c >= CAST(r_prod.value AS REAL)) AS is_producing,
+    CASE
+      WHEN w.status = 'plugged_and_abandoned'
+        OR w.recorded_status = 'plugged'
+        OR (w.decommissioned_on IS NOT NULL
+            AND date(w.decommissioned_on) <= {as_of_for('w.dataset_id')})
+        THEN 0
+      ELSE (e.eff_temp_delta_c >= CAST(r_prod.value AS REAL))
+    END AS is_producing,
     (SELECT n.note_id || ': ' || n.text
        FROM context_notes n
       WHERE n.asset_id = w.asset_id AND n.dataset_id = w.dataset_id
-        AND n.note_type != 'correction'
+         AND n.note_type NOT IN ('correction', 'data_correction')
         AND (n.valid_from IS NULL OR n.valid_from <= {as_of_for('w.dataset_id')})
         AND (n.valid_to   IS NULL OR n.valid_to   >= {as_of_for('w.dataset_id')})
       ORDER BY n.created_at DESC LIMIT 1) AS context_reason,
@@ -521,7 +540,7 @@ JOIN inspections i ON i.asset_id = n.asset_id AND i.dataset_id = n.dataset_id
                           AND i2.dataset_id = n.dataset_id
                           AND i2.inspected_at <= n.created_at
                           AND i2.inspected_at >= datetime(n.created_at, '-14 days'))
-WHERE n.note_type != 'correction'
+ WHERE n.note_type NOT IN ('correction', 'data_correction')
   AND n.text LIKE '%INS-%'
 UNION ALL
 SELECT

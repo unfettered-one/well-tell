@@ -13,7 +13,12 @@ import os
 import sys
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from backend.visuals import Visual
+
 ROOT = Path(__file__).resolve().parent.parent
+MESSAGE_PAGE_SIZE = 5  # Keep each `opencode api` JSON response below its stdout cap.
 
 
 class UpstreamError(RuntimeError):
@@ -25,8 +30,6 @@ class OpenCode:
         self.model = model
         self.timeout = timeout
         self._prepared = False
-        self.location = db.parent / (db.stem + "_opencode")
-        self.location.mkdir(parents=True, exist_ok=True)
         config = json.loads((ROOT / "opencode.json").read_text())
         config["snapshots"] = False
         config["agents"]["copilot"]["system"] = (ROOT / "backend/agent.md").read_text()
@@ -40,6 +43,13 @@ class OpenCode:
             )).hexdigest()[:12],
         ]
         config["mcp"]["servers"]["well"]["cwd"] = str(ROOT)
+        # OpenCode caches location services. Editing a config in the same
+        # already-loaded location need not refresh its agent prompt. Give each
+        # managed config revision a stable location instead of globally reloading
+        # OpenCode (which would disrupt unrelated sessions/forms).
+        revision = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
+        self.location = db.parent / (db.stem + "_opencode") / revision
+        self.location.mkdir(parents=True, exist_ok=True)
         (self.location / "opencode.json").write_text(json.dumps(config, indent=2))
 
     async def request(self, method: str, path: str, body=None):
@@ -69,7 +79,11 @@ class OpenCode:
         try:
             return json.loads(stdout)
         except ValueError as exc:
-            raise UpstreamError("OpenCode returned invalid API JSON") from exc
+            # Only structural diagnostics, never raw stdout/provider content.
+            raise UpstreamError(
+                f"OpenCode returned invalid API JSON for {method} {path} "
+                f"({len(stdout)} bytes, parse position {getattr(exc, 'pos', 'unknown')})"
+            ) from exc
 
     async def prepare(self):
         """Wait for location-scoped MCP discovery before the first model turn."""
@@ -123,7 +137,7 @@ class OpenCode:
             raise
         # Read only this turn, even on long, paginated conversations.
         collected = []
-        path = f"/api/session/{session}/message?order=desc&limit=100"
+        path = f"/api/session/{session}/message?order=desc&limit={MESSAGE_PAGE_SIZE}"
         while path:
             page = await self.request("get", path)
             for message in page["data"]:
@@ -133,7 +147,7 @@ class OpenCode:
             cursor = page.get("cursor", {}).get("next")
             if cursor:
                 from urllib.parse import quote
-                path = f"/api/session/{session}/message?limit=100&cursor={quote(cursor, safe='')}"
+                path = f"/api/session/{session}/message?limit={MESSAGE_PAGE_SIZE}&cursor={quote(cursor, safe='')}"
             else:
                 path = None
         raise UpstreamError("OpenCode did not return the admitted conversation turn")
@@ -168,7 +182,16 @@ def parse_answer(messages: list[dict]) -> dict:
     if final.startswith("```json") and final.endswith("```"):
         final = final[7:-3].strip()
     try:
-        result = json.loads(final)
+        try:
+            result = json.loads(final)
+        except json.JSONDecodeError:
+            # Occasionally the model appends one extra closing brace after an
+            # otherwise complete JSON object. Recover only that exact case;
+            # prose or any other trailing payload remains a hard failure.
+            candidate = final.strip()
+            result, end = json.JSONDecoder().raw_decode(candidate)
+            if candidate[end:].strip() != "}":
+                raise ValueError("unexpected trailing content")
         if not isinstance(result, dict) or not isinstance(result.get("answer"), str) or not result["answer"].strip():
             raise ValueError
         citations = result["citations"]
@@ -182,6 +205,15 @@ def parse_answer(messages: list[dict]) -> dict:
                 or not isinstance(visual.get("data"), list)
                 or not all(isinstance(row, dict) for row in visual["data"])):
             raise ValueError
+        if visual is not None:
+            try:
+                Visual.model_validate(visual)
+            except ValidationError:
+                # Detailed display metadata is soft-validated so a bad chart
+                # mapping cannot discard a verified answer or its citations.
+                # Keep the basic visual payload; the UI validates it again and
+                # shows readable returned rows instead of guessing fields.
+                pass
     except (ValueError, KeyError, TypeError) as exc:
         raise UpstreamError("Model returned malformed answer JSON; retry or select another free model") from exc
     evidence_text = "\n".join(evidence)

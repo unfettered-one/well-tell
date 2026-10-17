@@ -329,6 +329,9 @@ def test_rule_override_round_trip(db_copy):
     # benchmark B14: T350 wells at exactly 2 pump-jack repairs that must flip...
     T350_2 = ["WELL-0004", "WELL-0013", "WELL-0021", "WELL-0055", "WELL-0079",
               "WELL-0093", "WELL-0120", "WELL-0183", "WELL-0189"]
+    with sqlite3.connect(db_copy) as conn:
+        loaded_datasets = {r[0] for r in conn.execute(
+            "SELECT DISTINCT dataset_id FROM wells")}
 
     async def scenario(session):
         base = await call(session, "query_db", {"sql":
@@ -342,7 +345,7 @@ def test_rule_override_round_trip(db_copy):
             "applies_to": "T350", "author_user_id": U_MICHAEL,
             "reason": "team policy"})
         assert out["applies_to"] == "T350"
-        assert out["written"][0]["dataset_id"] == "sample"
+        assert {r["dataset_id"] for r in out["written"]} == loaded_datasets
         assert "v_rca_due" in out["echo"]
 
         # the T350 wells at exactly 2 now need RCA ...
@@ -362,6 +365,21 @@ def test_rule_override_round_trip(db_copy):
             "AND equipment_kind='pump_jack' AND corrective_count_window=2 "
             "AND rca_due=1"})
         assert q["rows"][0]["due"] == 0
+
+        if "test" in loaded_datasets:
+            esp = await call(session, "set_rule", {
+                "parameter": "rca_after_n_repairs", "value": "1",
+                "applies_to": "T500:esp_pump", "author_user_id": U_MICHAEL,
+                "reason": "ESP-specific test override"})
+            assert esp["applies_to"] == "T500:esp_pump"
+            assert {r["dataset_id"] for r in esp["written"]} == loaded_datasets
+            assert all(r["well_type"] == "T500" and r["equipment_kind"] == "esp_pump"
+                       for r in esp["echo"]["v_rca_due"])
+            specific = await call(session, "query_db", {"sql":
+                "SELECT value FROM rules WHERE dataset_id='test' "
+                "AND parameter='rca_after_n_repairs' "
+                "AND applies_to='T500:esp_pump' AND source_doc='runtime'"})
+            assert specific["rows"][0]["value"] == "1"
 
         # the manual's original row is kept; the override is the runtime row
         rules = await call(session, "query_db", {"sql":

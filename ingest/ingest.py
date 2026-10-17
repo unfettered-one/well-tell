@@ -82,6 +82,31 @@ def mirror_corrections(dataset_id, notes, count_bucket):
     format contract is dropped and counted (verify hard-fails)."""
     out, unparsed = [], 0
     for n in notes:
+        if n.get("note_type") == "data_correction":
+            field = n.get("field")
+            if field not in {"wellhead_temp_c", "temp_delta_c", "spill_detected",
+                             "spill_est_volume_bbl"}:
+                unparsed += 1
+                count_bucket["unparsed"] += 1
+                continue
+            out.append((
+                dataset_id,
+                "COR-" + n["note_id"],
+                "ingested",
+                n.get("asset_id"),
+                n.get("inspection_id"),
+                None,
+                field,
+                value_as_text(n.get("original_value")),
+                value_as_text(n.get("corrected_value")),
+                n.get("text"),
+                n.get("author_user_id"),
+                n.get("created_at"),
+                n.get("valid_from"),
+                n.get("valid_to"),
+                "applied",
+            ))
+            continue
         if n.get("note_type") != "correction":
             continue
         m = CORRECTION_RE.match(n.get("text", ""))
@@ -110,12 +135,21 @@ def mirror_corrections(dataset_id, notes, count_bucket):
     return out
 
 
+def value_as_text(value):
+    """Store correction scalars in the same text form used by runtime writes."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return None if value is None else str(value)
+
+
 # ----------------------------------------------------------------- report extraction
 
 CONTAINED_RE = re.compile(r"contained about ([0-9.]+) hours", re.I)
 CLASS_RE = re.compile(r"\b(minor|moderate|reportable|major) class\b", re.I)
 ACTION_RE = re.compile(r"action required", re.I)
 ROOT_RE = re.compile(r"##\s*Root cause\s*\n(.*?)(?=\n##\s|\Z)", re.S)
+PARTS_RE = re.compile(r"^\*\*Parts installed:\*\*\s*(.+?)\s*$", re.M | re.I)
+FOLLOW_UP_RE = re.compile(r"^\*\*Follow-up:\*\*\s*(.+?)\s*$", re.M | re.I)
 
 
 def extract_report(text):
@@ -127,6 +161,8 @@ def extract_report(text):
     action = ACTION_RE.search(norm)
     root = ROOT_RE.search(text)
     root_cause = " ".join(root.group(1).split()) if root else None
+    parts = PARTS_RE.search(text)
+    follow_up = FOLLOW_UP_RE.search(text)
 
     spill_relevant = "sr-02" in norm.lower()
     expected = ["root_cause"] + (["contained_hours_after", "spill_class"] if spill_relevant else [])
@@ -134,6 +170,8 @@ def extract_report(text):
         "contained_hours_after": float(contained.group(1)) if contained else None,
         "spill_class": klass.group(1).lower() if klass else None,
         "root_cause": root_cause,
+        "parts_installed": parts.group(1).strip() if parts else None,
+        "follow_up": follow_up.group(1).strip() if follow_up else None,
         "rca_action_required": 1 if action else 0,
     }
     status = "full" if all(got[k] is not None for k in expected) else "fts_only"
@@ -257,6 +295,23 @@ RULE_SPECS = [
          pattern=r"within (\d+) days of finishing the work"),
 ]
 
+# T500-specific rules only exist in the expanded test dataset. Its ESP threshold
+# is equipment-specific; other T500 equipment continues to use the fleet value.
+T500_RULE_SPECS = [
+    dict(parameter="production_threshold", file="fleet/well-types/T500.md",
+         protocol="T500", unit="celsius", applies_to="T500",
+         pattern=r"at least (\d+) ?°c above ambient"),
+    dict(parameter="overtemp_alarm_c", file="fleet/well-types/T500.md",
+         protocol="T500", unit="celsius", applies_to="T500",
+         pattern=r"at or below (\d+) ?°c"),
+    dict(parameter="spill_shutin_area_pct", file="fleet/well-types/T500.md",
+         protocol="T500", unit="percent", applies_to="T500",
+         pattern=r"spill covering more than (\d+) ?%"),
+    dict(parameter="rca_after_n_repairs", file="fleet/well-types/T500.md",
+         protocol="RC-05", unit="count", applies_to="T500:esp_pump",
+         pattern=r"(two|\d+) or more corrective maintenance events on the esp"),
+]
+
 # Known values on the sample dataset (guard 3, ingest_plan.md §5) — hard-fail on drift.
 EXPECTED_SAMPLE = {
     "production_threshold": {"T200": 15, "T350": 20},
@@ -287,15 +342,6 @@ EXPECTED_SAMPLE = {
     "downtime_days_per_finding": {"fleet": 7},
 }
 
-DOCS = [
-    ("fleet/well-types/T200.md", "manual"),
-    ("fleet/well-types/T350.md", "manual"),
-    ("fleet/sops/spill-response-sop.md", "sop"),
-    ("fleet/sops/regulatory-compliance-sop.md", "sop"),
-    ("fleet/sops/field-work-sop.md", "sop"),
-]
-
-
 def seed_rules(dataset_id, data_root: Path, allow_override: bool):
     """Parse the dataset's OWN manuals/SOPs into rules rows. Fail-safe, never
     fail-silent: a missed pattern is a hard failure naming rule + file, unless
@@ -311,7 +357,10 @@ def seed_rules(dataset_id, data_root: Path, allow_override: bool):
             doc_cache[rel] = norm_doc(path.read_text(encoding="utf-8"))
         return doc_cache[rel]
 
-    for spec in RULE_SPECS:
+    specs = list(RULE_SPECS)
+    if (data_root / "fleet/well-types/T500.md").exists():
+        specs.extend(T500_RULE_SPECS)
+    for spec in specs:
         text = doc_text(spec["file"])
         m = re.search(spec["pattern"], text)
         if not m:
@@ -349,11 +398,12 @@ def seed_rules(dataset_id, data_root: Path, allow_override: bool):
                      f"{spec['file']} says {value}, {cc_file} says {cc_value}")
 
     # Dataset-Guide rule (the only doc-external threshold): 7 days per finding.
-    guide = data_root.parent / "02-dataset-guide.md"
+    guide = next((parent / "02-dataset-guide.md" for parent in data_root.parents
+                  if (parent / "02-dataset-guide.md").exists()), None)
     ddf_value = 7
     ddf_source = "dataset-guide"
     ddf_snippet = "each inspection … counts as 7 days of downtime (fallback constant)"
-    if guide.exists():
+    if guide is not None:
         gtext = norm_doc(guide.read_text(encoding="utf-8"))
         gm = re.search(r"counts as (\d+) days of downtime", gtext)
         if gm:
@@ -363,7 +413,7 @@ def seed_rules(dataset_id, data_root: Path, allow_override: bool):
             print("WARN: downtime days/finding not parseable in 02-dataset-guide.md; "
                   f"falling back to {ddf_value}")
     else:
-        print(f"WARN: dataset guide not found next to {data_root}; "
+        print(f"WARN: dataset guide not found above {data_root}; "
               f"using fallback {ddf_value} days/finding")
     rows.append((dataset_id, "downtime_days_per_finding", "GUIDE",
                  "downtime_days_per_finding", ddf_value, "days", "fleet", 0,
@@ -409,7 +459,7 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
              for u in read_json(data_root / "fleet" / "users.json").get("users", [])]
 
     # ---- wells + equipment (per-well metadata.json)
-    wells, equipment = [], []
+    wells, equipment, type_history, team_history = [], [], [], []
     well_dirs = sorted(data_root.glob("assets/WELL-*"))
     for wdir in well_dirs:
         meta = read_json(wdir / "metadata.json")
@@ -424,12 +474,21 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
             meta.get("in_charge_user_id"), loc.get("lat"), loc.get("lon"),
             meta.get("installed_on"), li.get("inspection_id"), li.get("inspected_at"),
             meta.get("recorded_status"),
+            meta.get("status"), meta.get("decommissioned_on"),
         ))
+        for entry in meta.get("type_history", []):
+            type_history.append((dataset_id, meta["asset_id"], entry["well_type"],
+                                 entry.get("from"), entry.get("to") or None))
+        for entry in meta.get("team_history", []):
+            team_history.append((dataset_id, meta["asset_id"], entry["team_id"],
+                                 entry.get("from"), entry.get("to") or None))
         for eq in meta.get("equipment", []):
             equipment.append((dataset_id, eq["equipment_id"], meta["asset_id"],
                               eq.get("kind"), eq.get("model")))
     counts["wells"] = len(wells)
     counts["equipment"] = len(equipment)
+    counts["well_type_history"] = len(type_history)
+    counts["well_team_history"] = len(team_history)
 
     # ---- jsonl event records (per-well files)
     inspections, maintenance, regulatory, notes = [], [], [], []
@@ -446,6 +505,7 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
                 1 if rec.get("spill_detected") else 0,
                 rec.get("spill_area_pct"), rec.get("spill_est_volume_bbl"),
                 json.dumps(rec.get("evidence_images") or []), rec.get("notes"),
+                rec.get("recorded_at"),
             ))
         for rec in read_jsonl(wdir / "maintenance.jsonl"):
             cost = rec.get("cost_usd") or {}
@@ -458,6 +518,9 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
                 rec.get("downtime_hours"),
                 cost.get("labor"), cost.get("parts"), cost.get("total"),
                 rec.get("triggered_by_inspection_id"), rec.get("report_file"),
+                rec.get("recorded_at"),
+                json.dumps(rec["cost_revision"], sort_keys=True)
+                if rec.get("cost_revision") is not None else None,
             ))
         for rec in read_jsonl(wdir / "regulatory-events.jsonl"):
             regulatory.append((
@@ -473,6 +536,8 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
                 rec.get("author_user_id"), rec.get("note_type"),
                 rec.get("inspection_id"), rec.get("text"),
                 rec.get("valid_from"), rec.get("valid_to"),
+                rec.get("field"), value_as_text(rec.get("original_value")),
+                value_as_text(rec.get("corrected_value")),
             ))
     counts["inspections"] = len(inspections)
     counts["maintenance"] = len(maintenance)
@@ -504,7 +569,8 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
         report_facts.append((
             dataset_id, mnt_id, trigger,
             facts["contained_hours_after"], facts["rca_action_required"],
-            facts["spill_class"], facts["root_cause"], status,
+            facts["spill_class"], facts["root_cause"], facts["parts_installed"],
+            facts["follow_up"], status,
         ))
         cov["total"] += 1
         cov["root"] += 1 if facts["root_cause"] else 0
@@ -517,12 +583,22 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
 
     # ---- documents catalog + rules seeding (§5)
     documents = []
-    for rel, doc_type in DOCS:
-        path = data_root / rel
-        if not path.exists():
-            fail(f"document missing from dataset: {rel}")
+    for path in sorted((data_root / "fleet").rglob("*.md")):
+        rel = path.relative_to(data_root).as_posix()
+        if "/well-types/" in f"/{rel}":
+            doc_type = "manual"
+        elif path.name.lower().startswith("moc-"):
+            doc_type = "memo"
+        elif path.name.lower().startswith("regulator-letter-"):
+            doc_type = "letter"
+        elif path.name.lower().startswith("supplier-recall-"):
+            doc_type = "notice"
+        else:
+            doc_type = "sop"
         title = path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
         documents.append((dataset_id, rel, doc_type, rel, title))
+    if not documents:
+        fail(f"no catalogable fleet documents found under {data_root / 'fleet'}")
     counts["documents"] = len(documents)
     rules_rows = seed_rules(dataset_id, data_root, allow_override)
     counts["rules"] = len(rules_rows)
@@ -542,16 +618,38 @@ def ingest_dataset(conn, data_root: Path, dataset_id: str, as_of_opt, allow_over
                          (dataset_id,))
         else:
             conn.execute(f"DELETE FROM {table} WHERE dataset_id = ?", (dataset_id,))
-    conn.executemany("INSERT INTO teams VALUES (?,?,?,?)", teams)
-    conn.executemany("INSERT INTO areas VALUES (?,?,?,?,?,?)", areas)
-    conn.executemany("INSERT INTO users VALUES (?,?,?,?,?)", users)
-    conn.executemany("INSERT INTO wells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", wells)
-    conn.executemany("INSERT INTO equipment VALUES (?,?,?,?,?)", equipment)
-    conn.executemany("INSERT INTO inspections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", inspections)
-    conn.executemany("INSERT INTO maintenance VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", maintenance)
-    conn.executemany("INSERT INTO report_facts VALUES (?,?,?,?,?,?,?,?)", report_facts)
-    conn.executemany("INSERT INTO regulatory_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", regulatory)
-    conn.executemany("INSERT INTO context_notes VALUES (?,?,?,?,?,?,?,?,?,?)", notes)
+    conn.executemany("INSERT INTO teams(dataset_id,team_id,name,lead_user_id) VALUES (?,?,?,?)", teams)
+    conn.executemany("INSERT INTO areas(dataset_id,area_id,name,team_id,center_lat,center_lon) VALUES (?,?,?,?,?,?)", areas)
+    conn.executemany("INSERT INTO users(dataset_id,user_id,name,role,team_id) VALUES (?,?,?,?,?)", users)
+    conn.executemany("""INSERT INTO wells(
+        dataset_id,asset_id,name,asset_category,well_type,area_id,team_id,
+        in_charge_user_id,lat,lon,installed_on,last_inspection_id,
+        last_inspection_at,recorded_status,status,decommissioned_on)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", wells)
+    conn.executemany("INSERT INTO equipment(dataset_id,equipment_id,asset_id,kind,model) VALUES (?,?,?,?,?)", equipment)
+    conn.executemany("""INSERT INTO well_type_history(
+        dataset_id,asset_id,well_type,valid_from,valid_to) VALUES (?,?,?,?,?)""", type_history)
+    conn.executemany("""INSERT INTO well_team_history(
+        dataset_id,asset_id,team_id,valid_from,valid_to) VALUES (?,?,?,?,?)""", team_history)
+    conn.executemany("""INSERT INTO inspections(
+        dataset_id,inspection_id,asset_id,inspected_at,inspector_user_id,method,
+        ambient_temp_c,wellhead_temp_c,temp_delta_c,spill_detected,spill_area_pct,
+        spill_est_volume_bbl,evidence_images_json,notes,recorded_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", inspections)
+    conn.executemany("""INSERT INTO maintenance(
+        dataset_id,maintenance_id,asset_id,started_at,completed_at,maintenance_type,
+        equipment_kind,issue,action_taken,technician_user_id,contractor,downtime_hours,
+        cost_labor,cost_parts,cost_total,triggered_by_inspection_id,report_file,
+        recorded_at,cost_revision_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", maintenance)
+    conn.executemany("""INSERT INTO report_facts(
+        dataset_id,maintenance_id,inspection_id,contained_hours_after,
+        rca_action_required,spill_class,root_cause,parts_installed,follow_up,
+        extraction_status) VALUES (?,?,?,?,?,?,?,?,?,?)""", report_facts)
+    conn.executemany("INSERT INTO regulatory_events(dataset_id,event_id,asset_id,date,agency,event_type,protocol_id,related_inspection_id,hours_to_report,fine_usd,status,detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", regulatory)
+    conn.executemany("""INSERT INTO context_notes(
+        dataset_id,note_id,asset_id,created_at,author_user_id,note_type,
+        inspection_id,text,valid_from,valid_to,field,original_value,corrected_value)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", notes)
     conn.executemany("INSERT INTO corrections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", corrections)
     conn.executemany("INSERT INTO documents VALUES (?,?,?,?,?)", documents)
     conn.executemany("INSERT INTO rules VALUES (?,?,?,?,?,?,?,?,?,?)", rules_rows)

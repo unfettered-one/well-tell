@@ -50,7 +50,8 @@ def verify_dataset(conn, c, dataset_id):
 
     # ---- no silent drops: DB row counts match meta-recorded parsed counts
     # (rules: runtime overrides are NOT ingested rows — exclude them, review R1)
-    for table in ("wells", "equipment", "inspections", "maintenance",
+    for table in ("wells", "equipment", "well_type_history", "well_team_history",
+                  "inspections", "maintenance",
                   "report_facts", "regulatory_events", "context_notes",
                   "documents", "rules"):
         if table == "rules":
@@ -61,6 +62,10 @@ def verify_dataset(conn, c, dataset_id):
             db_n = one(conn, f"SELECT COUNT(*) FROM {table} WHERE dataset_id = ?",
                        (dataset_id,))
         meta_n = create.get_meta(conn, f"rows_{dataset_id}_{table}")
+        if meta_n is None and table in ("well_type_history", "well_team_history"):
+            # Databases ingested before history support have no count key; the
+            # migration adds empty history tables, so their compatible baseline is 0.
+            meta_n = 0
         c.check(meta_n is not None and db_n == int(meta_n),
                 f"{table}: {db_n} rows (meta says {meta_n})")
 
@@ -118,6 +123,11 @@ def verify_dataset(conn, c, dataset_id):
         LEFT JOIN wells w ON w.asset_id=e.asset_id AND w.dataset_id=e.dataset_id
         WHERE e.dataset_id=? AND w.asset_id IS NULL""", (dataset_id,))
     c.check(orphans == 0, f"equipment -> wells orphans: {orphans}")
+    for table in ("well_type_history", "well_team_history"):
+        orphans = one(conn, f"""SELECT COUNT(*) FROM {table} h
+            LEFT JOIN wells w ON w.asset_id=h.asset_id AND w.dataset_id=h.dataset_id
+            WHERE h.dataset_id=? AND w.asset_id IS NULL""", (dataset_id,))
+        c.check(orphans == 0, f"{table} -> wells orphans: {orphans}")
     for table, col, ref, ref_col in (("wells", "area_id", "areas", "area_id"),
                                      ("wells", "team_id", "teams", "team_id"),
                                      ("wells", "in_charge_user_id", "users", "user_id")):
@@ -180,6 +190,27 @@ def verify_dataset(conn, c, dataset_id):
         n = one(conn, "SELECT COUNT(*) FROM rules WHERE dataset_id=? AND parameter=?",
                 (dataset_id, key))
         c.check(n >= 1, f"rule present: {key}")
+
+    n_t500 = one(conn, "SELECT COUNT(*) FROM wells WHERE dataset_id=? AND well_type='T500'",
+                 (dataset_id,))
+    if n_t500:
+        for parameter, applies_to, expected in (
+                ("production_threshold", "T500", 25),
+                ("overtemp_alarm_c", "T500", 95),
+                ("spill_shutin_area_pct", "T500", 5),
+                ("rca_after_n_repairs", "T500:esp_pump", 2)):
+            row = conn.execute("""SELECT value FROM rules WHERE dataset_id=?
+                AND parameter=? AND applies_to=? ORDER BY is_overridden DESC, rowid DESC
+                LIMIT 1""", (dataset_id, parameter, applies_to)).fetchone()
+            c.check(row is not None and float(row[0]) == expected,
+                    f"T500 rule {parameter}[{applies_to}] = {expected} "
+                    f"(got {row[0] if row else None})")
+        for path in ("fleet/well-types/T500.md",
+                     "fleet/sops/operations-sop-rev2.md",
+                     "fleet/sops/supplier-recall-notice-2026-12-01.md"):
+            n_doc = one(conn, "SELECT COUNT(*) FROM documents WHERE dataset_id=? AND path=?",
+                        (dataset_id, path))
+            c.check(n_doc == 1, f"test document cataloged: {path}")
 
     # T200/T350 cross-checks: same escalation rule in both manuals
     vals = dict(conn.execute(

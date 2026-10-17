@@ -44,6 +44,11 @@ def db_copy(tmp_path: Path) -> Path:
     out = sqlite3.connect(str(dst))
     try:
         src.backup(out)
+        # A local demo may already have chats. Clear only the disposable copy's
+        # conversation logs, so assertions do not depend on who used the UI last.
+        for table in ("messages", "sessions", "backend_conversations"):
+            out.execute(f"DELETE FROM {table}")
+        out.commit()
     finally:
         out.close()
         src.close()
