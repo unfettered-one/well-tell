@@ -1,33 +1,76 @@
 {
   "provenance": {
-    "source": "../data/eval-final-results.json",
+    "source": "../data/ui-live-results.json",
     "captured": true,
-    "displayMetadataAnnotated": true
+    "displayMetadataAnnotated": false
   },
   "responses": {
     "status_card": {
-      "session_id": "chat-8df9fa6c2c014aee854d5bba01791d5a",
-      "answer": "**No—WELL-0001 is not producing according to the latest data, as of 16 October 2026.** Its recorded status is “active,” but the latest inspection says **“Pump jack not moving”** (INS-0001-0203).\n\n**Last inspected:** 15 October 2026 at 09:45 UTC, by **Ryan Brooks**, using a drone. Effective temperature rise was approximately **3.2 °C** (INS-0001-0203).\n\nThe context note says it was shut in from 7 October for planned rod-string replacement, with return expected around 20 October; the work order had not yet been entered. No open repair reason is recorded (CTX-0001-003).\n\n**Unconfirmed disagreement:** Jake Morales says the well has been back online since 14 October, which conflicts with the inspection and shut-in note (CLAIM-0001). Can you confirm whether it has restarted?",
-      "citations": ["INS-0001-0203", "CTX-0001-003", "CLAIM-0001"],
+      "session_id": "chat-131decb650b446008f5b47842b48e1fc",
+      "answer": "WELL-0001 is **not producing** per its latest effective status. It is recorded as active, but the production view reports not producing; the latest inspection showed a 3.2 °C temperature rise against a 15 °C threshold. It was inspected on **15 Oct 2026 at 09:45 UTC** by **Ryan Brooks** (INS-0001-0203). The inspector noted the pump jack was not moving. A context note says it was shut in from 7 Oct for planned rod-string replacement, with work expected to finish around 20 Oct; the note says no work order was yet in the maintenance system (CTX-0001-003).",
+      "citations": ["INS-0001-0203", "CTX-0001-003"],
       "visual": {
         "type": "status_card",
-        "title": "WELL-0001 — Not producing",
+        "title": "WELL-0001 — current production status",
         "data": [
           {
             "asset_id": "WELL-0001",
             "well_name": "SW-23 Well 001",
-            "area_name": "Southwest Block 23",
             "recorded_status": "active",
             "is_producing": 0,
-            "latest_inspection_id": "INS-0001-0203",
             "latest_inspection_at": "2026-10-15T09:45:00Z",
-            "inspector_name": "Ryan Brooks",
-            "last_method": "drone",
-            "eff_wellhead_temp_c": 25.6,
-            "eff_temp_delta_c": 3.200000000000003,
+            "last_inspector_name": "Ryan Brooks",
+            "latest_inspection_id": "INS-0001-0203",
+            "eff_temp_delta_c": 3.2,
+            "production_threshold_c": 15,
             "latest_inspector_notes": "Pump jack not moving.",
             "context_reason": "CTX-0001-003: Well shut in from 7 Oct for planned rod string replacement. Work order not yet in the maintenance system. Expected back online around 20 Oct.",
             "open_repair_reason": null
+          }
+        ],
+        "columns": [
+          {
+            "field": "asset_id",
+            "label": "Well"
+          },
+          {
+            "field": "recorded_status",
+            "label": "Recorded status"
+          },
+          {
+            "field": "is_producing",
+            "label": "Producing"
+          },
+          {
+            "field": "latest_inspection_at",
+            "label": "Last inspected",
+            "format": "datetime"
+          },
+          {
+            "field": "last_inspector_name",
+            "label": "Inspector"
+          },
+          {
+            "field": "eff_temp_delta_c",
+            "label": "Effective temperature rise",
+            "unit": "°C",
+            "format": "number",
+            "decimals": 1
+          },
+          {
+            "field": "production_threshold_c",
+            "label": "Production threshold",
+            "unit": "°C",
+            "format": "number",
+            "decimals": 1
+          },
+          {
+            "field": "latest_inspector_notes",
+            "label": "Inspector observation"
+          },
+          {
+            "field": "context_reason",
+            "label": "Context"
           }
         ]
       },
@@ -55,75 +98,91 @@
       ]
     },
     "table": {
-      "session_id": "chat-b1a1c010bb4e45d4bcf14449c1a202a0",
-      "answer": "As of **2026-10-16**, the wells below are classified as **not producing** from their latest inspections. Each has a temperature rise below the T200 production threshold of **15°C above ambient** (fleet/well-types/T200.md, §9.3).\n\n- **WELL-0164:** Pump jack observed not moving; the underlying cause is not recorded (INS-0164-0205).\n- **WELL-0170:** Open repair for walking-beam bearing wear (MNT-0170-031; INS-0170-0206).\n- **WELL-0172:** No stroke observed; an open repair also records a flowline corrosion pinhole leak (INS-0172-0206; MNT-0172-028). The records do not explicitly establish which caused the current stoppage.\n- **WELL-0175:** Low temperature rise indicates non-production, but no explanatory note or open repair is recorded (INS-0175-0204).\n\nThe recorded administrative status remains **active** for WELL-0164, WELL-0172 and WELL-0175 despite the inspection-based non-production finding. No additional context reason is recorded for these wells.",
+      "session_id": "chat-7ac03629daf24c24bcc95b446e131a43",
+      "answer": "As of the sample dataset date (16 Oct 2026), these four Northeast Block 8 wells are classified as not producing. For WELL-0170 and WELL-0172, an open repair is recorded; for WELL-0164 and WELL-0175, the data does not state a specific cause. Each latest temperature rise is below the production threshold; that measurement does not by itself establish why the well is not producing.",
       "citations": [
         "INS-0164-0205",
         "INS-0170-0206",
         "MNT-0170-031",
         "INS-0172-0206",
         "MNT-0172-028",
-        "INS-0175-0204",
-        "fleet/well-types/T200.md"
+        "INS-0175-0204"
       ],
       "visual": {
         "type": "table",
-        "title": "Northeast Block 8 — not producing as of 2026-10-16",
+        "title": "Not-producing wells — Northeast Block 8 (as of 16 Oct 2026)",
+        "columns": [
+          {
+            "field": "asset_id",
+            "label": "Well ID"
+          },
+          {
+            "field": "well_name",
+            "label": "Well"
+          },
+          {
+            "field": "recorded_status",
+            "label": "Recorded status"
+          },
+          {
+            "field": "latest_inspection_at",
+            "label": "Latest inspection",
+            "format": "datetime"
+          },
+          {
+            "field": "eff_temp_delta_c",
+            "label": "Temperature rise",
+            "unit": "°C",
+            "format": "number",
+            "decimals": 1
+          },
+          {
+            "field": "production_threshold_c",
+            "label": "Production threshold",
+            "unit": "°C",
+            "format": "number",
+            "decimals": 1
+          },
+          {
+            "field": "open_repair_reason",
+            "label": "Recorded repair / reason"
+          }
+        ],
         "data": [
           {
             "asset_id": "WELL-0164",
             "well_name": "NE-08 Well 164",
-            "well_type": "T200",
             "recorded_status": "active",
-            "latest_inspection_id": "INS-0164-0205",
             "latest_inspection_at": "2026-10-15T11:45:00Z",
-            "inspector_name": "Tyler Hughes",
             "eff_temp_delta_c": 4.100000000000001,
             "production_threshold_c": 15,
-            "latest_inspector_notes": "Pump jack not moving.",
-            "context_reason": null,
             "open_repair_reason": null
           },
           {
             "asset_id": "WELL-0170",
             "well_name": "NE-08 Well 170",
-            "well_type": "T200",
             "recorded_status": "down",
-            "latest_inspection_id": "INS-0170-0206",
             "latest_inspection_at": "2026-10-15T14:15:00Z",
-            "inspector_name": "Ashley Bennett",
             "eff_temp_delta_c": 2.8999999999999986,
             "production_threshold_c": 15,
-            "latest_inspector_notes": "",
-            "context_reason": null,
-            "open_repair_reason": "MNT-0170-031: Walking beam bearing wear (started 2026-09-19, still open)"
+            "open_repair_reason": "Walking beam bearing wear; repair MNT-0170-031 started 2026-09-19 and remains open."
           },
           {
             "asset_id": "WELL-0172",
             "well_name": "NE-08 Well 172",
-            "well_type": "T200",
             "recorded_status": "active",
-            "latest_inspection_id": "INS-0172-0206",
             "latest_inspection_at": "2026-10-15T07:45:00Z",
-            "inspector_name": "Jessica Reed",
             "eff_temp_delta_c": 5.699999999999999,
             "production_threshold_c": 15,
-            "latest_inspector_notes": "No stroke observed during flight.",
-            "context_reason": null,
-            "open_repair_reason": "MNT-0172-028: Flowline corrosion pinhole leak (started 2026-10-03, still open)"
+            "open_repair_reason": "Flowline corrosion pinhole leak; repair MNT-0172-028 started 2026-10-03 and remains open."
           },
           {
             "asset_id": "WELL-0175",
             "well_name": "NE-08 Well 175",
-            "well_type": "T200",
             "recorded_status": "active",
-            "latest_inspection_id": "INS-0175-0204",
             "latest_inspection_at": "2026-10-15T08:00:00Z",
-            "inspector_name": "Jessica Reed",
             "eff_temp_delta_c": 0.40000000000000213,
             "production_threshold_c": 15,
-            "latest_inspector_notes": "",
-            "context_reason": null,
             "open_repair_reason": null
           }
         ]
@@ -164,28 +223,12 @@
         {
           "name": "well_recall",
           "status": "completed"
-        },
-        {
-          "name": "well_describe",
-          "status": "completed"
-        },
-        {
-          "name": "well_query_db",
-          "status": "completed"
-        },
-        {
-          "name": "well_query_db",
-          "status": "completed"
-        },
-        {
-          "name": "well_get_doc",
-          "status": "completed"
         }
       ]
     },
     "line": {
-      "session_id": "chat-248c245c31fb4df18e7c9bb106d3096e",
-      "answer": "Wellhead versus ambient temperature for the last 13 weeks, ending **2026-10-16**. Non-producing readings are marked in red: **October 8** (INS-0001-0202) and **October 15** (INS-0001-0203). Both fall below the **15°C above ambient** production threshold (fleet/well-types/T200.md, §9.3).",
+      "session_id": "chat-8d1651c0d5e4434fa628fd2edb4cd46a",
+      "answer": "WELL-0001 temperatures over the 13-week window ending 16 Oct 2026. Wellhead values are effective (correction-adjusted); ambient values are recorded readings.",
       "citations": [
         "INS-0001-0191",
         "INS-0001-0192",
@@ -199,141 +242,110 @@
         "INS-0001-0200",
         "INS-0001-0201",
         "INS-0001-0202",
-        "INS-0001-0203",
-        "fleet/well-types/T200.md"
+        "INS-0001-0203"
       ],
       "visual": {
         "type": "line",
-        "title": "WELL-0001 — Wellhead vs ambient temperature (°C)",
+        "title": "WELL-0001 wellhead and ambient temperatures (°C)",
         "x": {
           "field": "inspected_at",
-          "label": "Inspection",
+          "label": "Inspection date",
           "format": "date"
         },
         "y": [
           {
-            "field": "wellhead_temp_c",
-            "label": "wellhead_temp_c",
+            "field": "eff_wellhead_temp_c",
+            "label": "Wellhead temperature",
             "unit": "°C",
-            "format": "number"
+            "format": "number",
+            "decimals": 1
           },
           {
             "field": "ambient_temp_c",
-            "label": "ambient_temp_c",
+            "label": "Ambient temperature",
             "unit": "°C",
-            "format": "number"
+            "format": "number",
+            "decimals": 1
           }
         ],
-        "markers": {
-          "field": "non_producing_marker_c",
-          "color": "red",
-          "label": "Non-producing",
-          "connect": false
-        },
         "data": [
           {
             "inspection_id": "INS-0001-0191",
             "inspected_at": "2026-07-23T11:30:00Z",
-            "wellhead_temp_c": 61.2,
-            "ambient_temp_c": 33.1,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 61.2,
+            "ambient_temp_c": 33.1
           },
           {
             "inspection_id": "INS-0001-0192",
             "inspected_at": "2026-07-30T10:30:00Z",
-            "wellhead_temp_c": 58.2,
-            "ambient_temp_c": 32,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 58.2,
+            "ambient_temp_c": 32
           },
           {
             "inspection_id": "INS-0001-0193",
             "inspected_at": "2026-08-06T15:30:00Z",
-            "wellhead_temp_c": 65,
-            "ambient_temp_c": 35.1,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 65,
+            "ambient_temp_c": 35.1
           },
           {
             "inspection_id": "INS-0001-0194",
             "inspected_at": "2026-08-13T09:30:00Z",
-            "wellhead_temp_c": 60.6,
-            "ambient_temp_c": 34,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 60.6,
+            "ambient_temp_c": 34
           },
           {
             "inspection_id": "INS-0001-0195",
             "inspected_at": "2026-08-20T14:15:00Z",
-            "wellhead_temp_c": 59.3,
-            "ambient_temp_c": 36.3,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 59.3,
+            "ambient_temp_c": 36.3
           },
           {
             "inspection_id": "INS-0001-0196",
             "inspected_at": "2026-08-27T13:45:00Z",
-            "wellhead_temp_c": 61.2,
-            "ambient_temp_c": 34.4,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 61.2,
+            "ambient_temp_c": 34.4
           },
           {
             "inspection_id": "INS-0001-0197",
             "inspected_at": "2026-09-03T13:00:00Z",
-            "wellhead_temp_c": 65.2,
-            "ambient_temp_c": 34.5,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 65.2,
+            "ambient_temp_c": 34.5
           },
           {
             "inspection_id": "INS-0001-0198",
             "inspected_at": "2026-09-10T07:30:00Z",
-            "wellhead_temp_c": 52.8,
-            "ambient_temp_c": 27.2,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 52.8,
+            "ambient_temp_c": 27.2
           },
           {
             "inspection_id": "INS-0001-0199",
             "inspected_at": "2026-09-17T15:30:00Z",
-            "wellhead_temp_c": 53.6,
-            "ambient_temp_c": 31.2,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 53.6,
+            "ambient_temp_c": 31.2
           },
           {
             "inspection_id": "INS-0001-0200",
             "inspected_at": "2026-09-24T15:00:00Z",
-            "wellhead_temp_c": 45.7,
-            "ambient_temp_c": 23.6,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 45.7,
+            "ambient_temp_c": 23.6
           },
           {
             "inspection_id": "INS-0001-0201",
             "inspected_at": "2026-10-01T09:45:00Z",
-            "wellhead_temp_c": 50.4,
-            "ambient_temp_c": 23,
-            "non_producing": 0,
-            "non_producing_marker_c": null
+            "eff_wellhead_temp_c": 50.4,
+            "ambient_temp_c": 23
           },
           {
             "inspection_id": "INS-0001-0202",
             "inspected_at": "2026-10-08T10:45:00Z",
-            "wellhead_temp_c": 23.4,
-            "ambient_temp_c": 20.2,
-            "non_producing": 1,
-            "non_producing_marker_c": 23.4
+            "eff_wellhead_temp_c": 23.4,
+            "ambient_temp_c": 20.2
           },
           {
             "inspection_id": "INS-0001-0203",
             "inspected_at": "2026-10-15T09:45:00Z",
-            "wellhead_temp_c": 25.6,
-            "ambient_temp_c": 22.4,
-            "non_producing": 1,
-            "non_producing_marker_c": 25.6
+            "eff_wellhead_temp_c": 25.6,
+            "ambient_temp_c": 22.4
           }
         ]
       },
@@ -351,52 +363,37 @@
           "status": "completed"
         },
         {
-          "name": "well_describe",
-          "status": "completed"
-        },
-        {
           "name": "well_query_db",
-          "status": "completed"
-        },
-        {
-          "name": "well_query_db",
-          "status": "completed"
-        },
-        {
-          "name": "well_get_doc",
           "status": "completed"
         }
       ]
     },
     "bar": {
-      "session_id": "chat-6ec1e97ff35845078385fdd56d5a490f",
-      "answer": "For **June 16–October 16, 2026** (the dataset’s as-of date), the top three wells in **Northeast Block 7** by assessed downtime were:\n\n1. **WELL-0121 — 49 days**, from seven non-producing findings (INS-0121-0189, INS-0121-0200, INS-0121-0201, INS-0121-0202, INS-0121-0203, INS-0121-0205, INS-0121-0206).\n2. **WELL-0107 — 42 days**, from six findings (INS-0107-0194, INS-0107-0195, INS-0107-0196, INS-0107-0197, INS-0107-0198, INS-0107-0199).\n3. **WELL-0138 — 42 days**, tied for second, from six findings (INS-0138-0195, INS-0138-0196, INS-0138-0200, INS-0138-0201, INS-0138-0206, INS-0138-0207).\n\nThese are finding-based downtime assessments, not continuously measured outage durations.",
-      "citations": [
-        "INS-0121-0189",
-        "INS-0121-0200",
-        "INS-0121-0201",
-        "INS-0121-0202",
-        "INS-0121-0203",
-        "INS-0121-0205",
-        "INS-0121-0206",
-        "INS-0107-0194",
-        "INS-0107-0195",
-        "INS-0107-0196",
-        "INS-0107-0197",
-        "INS-0107-0198",
-        "INS-0107-0199",
-        "INS-0138-0195",
-        "INS-0138-0196",
-        "INS-0138-0200",
-        "INS-0138-0201",
-        "INS-0138-0206",
-        "INS-0138-0207"
-      ],
+      "session_id": "chat-d6f3adcaff26475aaed87e15a331dd2e",
+      "answer": "The three Northeast Block 7 wells with the most downtime in the four months ending 16 Oct 2026 were WELL-0121 (49 days), WELL-0107 (42 days), and WELL-0138 (42 days). Downtime is summed from non-producing findings, counted at 7 days per finding.",
+      "citations": ["WELL-0121", "WELL-0107", "WELL-0138"],
       "visual": {
         "type": "bar",
-        "title": "Top 3 wells by assessed downtime — Northeast Block 7",
+        "title": "Top 3 downtime wells — Northeast Block 7 (last four months)",
+        "data": [
+          {
+            "asset_id": "WELL-0121",
+            "well_name": "NE-07 Well 121",
+            "downtime_days": 49
+          },
+          {
+            "asset_id": "WELL-0107",
+            "well_name": "NE-07 Well 107",
+            "downtime_days": 42
+          },
+          {
+            "asset_id": "WELL-0138",
+            "well_name": "NE-07 Well 138",
+            "downtime_days": 42
+          }
+        ],
         "x": {
-          "field": "asset_id",
+          "field": "well_name",
           "label": "Well"
         },
         "y": [
@@ -404,39 +401,8 @@
             "field": "downtime_days",
             "label": "Downtime",
             "unit": "days",
-            "format": "number"
-          }
-        ],
-        "data": [
-          {
-            "asset_id": "WELL-0121",
-            "well_name": "NE-07 Well 121",
-            "area_name": "Northeast Block 7",
-            "window_start": "2026-06-16",
-            "window_end": "2026-10-16",
-            "downtime_days": 49,
-            "findings": 7,
-            "inspection_ids": "INS-0121-0189, INS-0121-0200, INS-0121-0201, INS-0121-0202, INS-0121-0203, INS-0121-0205, INS-0121-0206"
-          },
-          {
-            "asset_id": "WELL-0107",
-            "well_name": "NE-07 Well 107",
-            "area_name": "Northeast Block 7",
-            "window_start": "2026-06-16",
-            "window_end": "2026-10-16",
-            "downtime_days": 42,
-            "findings": 6,
-            "inspection_ids": "INS-0107-0194, INS-0107-0195, INS-0107-0196, INS-0107-0197, INS-0107-0198, INS-0107-0199"
-          },
-          {
-            "asset_id": "WELL-0138",
-            "well_name": "NE-07 Well 138",
-            "area_name": "Northeast Block 7",
-            "window_start": "2026-06-16",
-            "window_end": "2026-10-16",
-            "downtime_days": 42,
-            "findings": 6,
-            "inspection_ids": "INS-0138-0195, INS-0138-0196, INS-0138-0200, INS-0138-0201, INS-0138-0206, INS-0138-0207"
+            "format": "number",
+            "decimals": 0
           }
         ]
       },
@@ -454,87 +420,108 @@
           "status": "completed"
         },
         {
+          "name": "well_describe",
+          "status": "completed"
+        },
+        {
           "name": "well_query_db",
-          "status": "completed"
-        },
-        {
-          "name": "well_recall",
-          "status": "completed"
-        },
-        {
-          "name": "well_recall",
-          "status": "completed"
-        },
-        {
-          "name": "well_recall",
           "status": "completed"
         }
       ]
     },
     "map": {
-      "session_id": "chat-16d64df75f4c46fd9ddedf1e150649cc",
-      "answer": "Mapped every well in **Northeast Block 8** with a real spill during **July 18–October 16, 2026**, using the dataset’s as-of date.\n\n- **WELL-0151:** September 24 — estimated **4.5 bbl** (INS-0151-0201).\n- **WELL-0165:** July 30 — estimated **1.2 bbl** (INS-0165-0194).\n- **WELL-0175:** July 30 — estimated **3.9 bbl** (INS-0175-0193).\n- **WELL-0186:** July 23 — estimated **0.6 bbl** (INS-0186-0097).",
-      "citations": ["INS-0151-0201", "INS-0165-0194", "INS-0175-0193", "INS-0186-0097"],
+      "session_id": "chat-a6ef8403aba045fea823044ac9aa2556",
+      "answer": "Four wells in Northeast Block 8 had effective (real) spill detections in the 90 days through the sample dataset date, 16 Oct 2026. Coordinates are latitude, longitude; spill details include estimated volume and affected area. INS-0186-0097 — WELL-0186: (32.17552, -102.17775), 23 Jul 2026, 0.6 bbl, 3.6%, detected by drone. INS-0165-0194 — WELL-0165: (32.15665, -102.14522), 30 Jul 2026, 1.2 bbl, 2.5%, drone. INS-0175-0193 — WELL-0175: (32.18020, -102.14790), 30 Jul 2026, 3.9 bbl, 9.2%, drone. INS-0151-0201 — WELL-0151: (32.12246, -102.18445), 24 Sep 2026, 4.5 bbl, 10.5%, drone.",
+      "citations": ["INS-0186-0097", "INS-0165-0194", "INS-0175-0193", "INS-0151-0201"],
       "visual": {
         "type": "map",
-        "title": "Real spills in Northeast Block 8 · July 18–October 16, 2026",
+        "title": "Northeast Block 8 real spills — 18 Jul–16 Oct 2026",
         "data": [
           {
-            "asset_id": "WELL-0151",
-            "well_name": "NE-08 Well 151",
-            "area_name": "Northeast Block 8",
-            "lat": 32.12246,
-            "lon": -102.18445,
-            "spill_count": 1,
-            "total_est_volume_bbl": 4.5,
-            "spill_dates": "2026-09-24",
-            "inspection_ids": "INS-0151-0201",
-            "window_start": "2026-07-18",
-            "window_end": "2026-10-16"
-          },
-          {
-            "asset_id": "WELL-0165",
-            "well_name": "NE-08 Well 165",
-            "area_name": "Northeast Block 8",
-            "lat": 32.15665,
-            "lon": -102.14522,
-            "spill_count": 1,
-            "total_est_volume_bbl": 1.2,
-            "spill_dates": "2026-07-30",
-            "inspection_ids": "INS-0165-0194",
-            "window_start": "2026-07-18",
-            "window_end": "2026-10-16"
-          },
-          {
-            "asset_id": "WELL-0175",
-            "well_name": "NE-08 Well 175",
-            "area_name": "Northeast Block 8",
-            "lat": 32.1802,
-            "lon": -102.1479,
-            "spill_count": 1,
-            "total_est_volume_bbl": 3.9,
-            "spill_dates": "2026-07-30",
-            "inspection_ids": "INS-0175-0193",
-            "window_start": "2026-07-18",
-            "window_end": "2026-10-16"
-          },
-          {
+            "inspection_id": "INS-0186-0097",
             "asset_id": "WELL-0186",
             "well_name": "NE-08 Well 186",
             "area_name": "Northeast Block 8",
             "lat": 32.17552,
             "lon": -102.17775,
-            "spill_count": 1,
-            "total_est_volume_bbl": 0.6,
-            "spill_dates": "2026-07-23",
-            "inspection_ids": "INS-0186-0097",
-            "window_start": "2026-07-18",
-            "window_end": "2026-10-16"
+            "spill_date": "2026-07-23",
+            "discovered_at": "2026-07-23T14:15:00Z",
+            "est_volume_bbl": 0.6,
+            "spill_area_pct": 3.6,
+            "method": "drone"
+          },
+          {
+            "inspection_id": "INS-0165-0194",
+            "asset_id": "WELL-0165",
+            "well_name": "NE-08 Well 165",
+            "area_name": "Northeast Block 8",
+            "lat": 32.15665,
+            "lon": -102.14522,
+            "spill_date": "2026-07-30",
+            "discovered_at": "2026-07-30T11:45:00Z",
+            "est_volume_bbl": 1.2,
+            "spill_area_pct": 2.5,
+            "method": "drone"
+          },
+          {
+            "inspection_id": "INS-0175-0193",
+            "asset_id": "WELL-0175",
+            "well_name": "NE-08 Well 175",
+            "area_name": "Northeast Block 8",
+            "lat": 32.1802,
+            "lon": -102.1479,
+            "spill_date": "2026-07-30",
+            "discovered_at": "2026-07-30T11:45:00Z",
+            "est_volume_bbl": 3.9,
+            "spill_area_pct": 9.2,
+            "method": "drone"
+          },
+          {
+            "inspection_id": "INS-0151-0201",
+            "asset_id": "WELL-0151",
+            "well_name": "NE-08 Well 151",
+            "area_name": "Northeast Block 8",
+            "lat": 32.12246,
+            "lon": -102.18445,
+            "spill_date": "2026-09-24",
+            "discovered_at": "2026-09-24T15:30:00Z",
+            "est_volume_bbl": 4.5,
+            "spill_area_pct": 10.5,
+            "method": "drone"
           }
         ],
         "latitude": "lat",
         "longitude": "lon",
-        "well_id": "asset_id"
+        "well_id": "asset_id",
+        "columns": [
+          {
+            "field": "well_name",
+            "label": "Well"
+          },
+          {
+            "field": "spill_date",
+            "label": "Spill date",
+            "format": "date"
+          },
+          {
+            "field": "est_volume_bbl",
+            "label": "Estimated volume",
+            "unit": "bbl",
+            "format": "number",
+            "decimals": 1
+          },
+          {
+            "field": "spill_area_pct",
+            "label": "Spill area",
+            "unit": "%",
+            "format": "percent",
+            "decimals": 1
+          },
+          {
+            "field": "method",
+            "label": "Detection method"
+          }
+        ]
       },
       "tool_calls": [
         {
@@ -543,6 +530,14 @@
         },
         {
           "name": "well_list_tables",
+          "status": "completed"
+        },
+        {
+          "name": "well_describe",
+          "status": "completed"
+        },
+        {
+          "name": "well_describe",
           "status": "completed"
         },
         {
@@ -556,158 +551,78 @@
       ]
     },
     "heatmap": {
-      "session_id": "chat-071394d22ac14e5ea34088459ec86700",
-      "answer": "Heatmap of real spill counts by geographic area and month, with correction-removed detections excluded. Covers January 1–October 16, 2026, the dataset’s as-of date; October is partial. November and December are not shown because they are beyond the available period. Darker cells indicate more spills; zero means no effective spill detections recorded.",
+      "session_id": "chat-95c82549bdbd4e648de8a6ae8da4c8c2",
+      "answer": "2026 real spill counts by area and month, through the sample dataset date (16 Oct 2026). Corrected detections are excluded by the effective spill data; counts are distinct spill inspection records. Cited inspections are supporting examples, not an exhaustive list. The supporting-record query returned more rows than its 50-row display limit.",
       "citations": [
-        "INS-0102-0170",
+        "INS-0013-0165",
+        "INS-0053-0167",
+        "INS-0071-0164",
+        "INS-0085-0162",
         "INS-0136-0165",
+        "INS-0155-0163",
+        "INS-0015-0166",
+        "INS-0048-0169",
+        "INS-0182-0164",
+        "INS-0183-0168",
+        "INS-0060-0169",
+        "INS-0098-0165",
+        "INS-0032-0169",
+        "INS-0074-0171",
+        "INS-0082-0167",
+        "INS-0102-0170",
         "INS-0137-0169",
         "INS-0139-0163",
         "INS-0148-0169",
-        "INS-0124-0172",
-        "INS-0125-0169",
-        "INS-0148-0171",
-        "INS-0144-0173",
-        "INS-0150-0178",
-        "INS-0104-0178",
-        "INS-0131-0179",
-        "INS-0138-0182",
-        "INS-0142-0053",
-        "INS-0110-0185",
-        "INS-0113-0187",
-        "INS-0124-0184",
-        "INS-0127-0186",
-        "INS-0135-0185",
-        "INS-0145-0180",
-        "INS-0103-0191",
-        "INS-0113-0191",
-        "INS-0133-0190",
-        "INS-0136-0189",
-        "INS-0138-0190",
-        "INS-0141-0185",
-        "INS-0105-0190",
-        "INS-0145-0189",
-        "INS-0101-0197",
-        "INS-0132-0197",
-        "INS-0133-0198",
-        "INS-0141-0195",
-        "INS-0123-0093",
-        "INS-0128-0198",
-        "INS-0141-0198",
-        "INS-0149-0204",
-        "INS-0138-0208",
-        "INS-0155-0163",
-        "INS-0182-0164",
-        "INS-0183-0168",
         "INS-0192-0166",
-        "INS-0151-0170",
-        "INS-0162-0173",
-        "INS-0174-0168",
-        "INS-0191-0173",
-        "INS-0170-0176",
-        "INS-0193-0177",
-        "INS-0196-0174",
-        "INS-0197-0171",
-        "INS-0180-0180",
-        "INS-0198-0178",
-        "INS-0199-0181",
-        "INS-0191-0183",
-        "INS-0199-0185",
-        "INS-0154-0187",
-        "INS-0167-0088",
-        "INS-0168-0190",
-        "INS-0185-0190",
-        "INS-0165-0194",
-        "INS-0175-0193",
-        "INS-0186-0097",
-        "INS-0194-0191",
-        "INS-0151-0201",
-        "INS-0013-0165",
-        "INS-0015-0166",
-        "INS-0032-0169",
-        "INS-0048-0169",
         "INS-0002-0105",
-        "INS-0033-0175",
         "INS-0045-0167",
-        "INS-0005-0174",
-        "INS-0013-0177",
-        "INS-0050-0175",
-        "INS-0007-0178",
-        "INS-0010-0181",
-        "INS-0018-0178",
-        "INS-0021-0182",
-        "INS-0023-0181",
-        "INS-0026-0179",
-        "INS-0005-0183",
-        "INS-0013-0183",
-        "INS-0029-0068",
-        "INS-0001-0185",
-        "INS-0013-0188",
-        "INS-0017-0188",
-        "INS-0045-0185",
-        "INS-0030-0192",
-        "INS-0034-0145",
-        "INS-0039-0192",
-        "INS-0039-0193",
-        "INS-0017-0198",
-        "INS-0041-0198",
-        "INS-0044-0197",
-        "INS-0042-0203",
-        "INS-0042-0204",
-        "INS-0045-0198",
-        "INS-0001-0201",
-        "INS-0022-0195",
-        "INS-0053-0167",
-        "INS-0060-0169",
-        "INS-0071-0164",
-        "INS-0074-0171",
-        "INS-0082-0167",
-        "INS-0085-0162",
-        "INS-0098-0165",
-        "INS-0052-0172",
-        "INS-0064-0171",
-        "INS-0069-0171",
         "INS-0085-0167",
+        "INS-0125-0169",
+        "INS-0151-0170",
+        "INS-0174-0168",
+        "INS-0052-0172",
+        "INS-0148-0171",
+        "INS-0033-0175",
+        "INS-0069-0171",
+        "INS-0064-0171",
+        "INS-0124-0172",
+        "INS-0162-0173",
+        "INS-0191-0173",
         "INS-0074-0176",
-        "INS-0074-0179",
+        "INS-0144-0173",
+        "INS-0196-0174",
+        "INS-0005-0174",
+        "INS-0050-0175",
         "INS-0088-0178",
-        "INS-0098-0173",
         "INS-0099-0171",
-        "INS-0071-0180",
-        "INS-0073-0180",
-        "INS-0073-0182",
-        "INS-0074-0183",
-        "INS-0081-0179",
-        "INS-0088-0181",
-        "INS-0071-0184",
-        "INS-0075-0186",
-        "INS-0084-0185",
-        "INS-0096-0184",
-        "INS-0099-0178",
-        "INS-0060-0190",
-        "INS-0060-0191",
-        "INS-0079-0183",
-        "INS-0085-0187",
-        "INS-0090-0187",
-        "INS-0073-0195",
-        "INS-0085-0192",
-        "INS-0093-0189",
-        "INS-0098-0192",
-        "INS-0080-0202",
-        "INS-0080-0203",
-        "INS-0082-0198",
-        "INS-0091-0152",
-        "INS-0100-0196",
-        "INS-0077-0201",
-        "INS-0097-0201"
+        "INS-0098-0173",
+        "INS-0150-0178",
+        "INS-0170-0176",
+        "INS-0197-0171",
+        "INS-0013-0177",
+        "INS-0074-0179",
+        "INS-0193-0177",
+        "INS-0018-0178",
+        "INS-0073-0180"
       ],
       "visual": {
         "type": "heatmap",
-        "title": "2026 real spills by area and month — through October 16",
+        "title": "Real spill counts by area and month — 2026",
+        "row": {
+          "field": "area_name",
+          "label": "Area",
+          "format": "text"
+        },
+        "column": {
+          "field": "month",
+          "label": "Month",
+          "format": "text"
+        },
         "value": {
           "field": "spill_count",
-          "label": "Spills",
-          "format": "number"
+          "label": "Real spill count",
+          "format": "number",
+          "decimals": 0
         },
         "data": [
           {
@@ -797,18 +712,8 @@
           },
           {
             "area_name": "Northeast Block 8",
-            "month": "2026-08",
-            "spill_count": 0
-          },
-          {
-            "area_name": "Northeast Block 8",
             "month": "2026-09",
             "spill_count": 1
-          },
-          {
-            "area_name": "Northeast Block 8",
-            "month": "2026-10",
-            "spill_count": 0
           },
           {
             "area_name": "Southwest Block 23",
@@ -910,15 +815,7 @@
             "month": "2026-10",
             "spill_count": 2
           }
-        ],
-        "row": {
-          "field": "area_name",
-          "label": "Area"
-        },
-        "column": {
-          "field": "month",
-          "label": "Month"
-        }
+        ]
       },
       "tool_calls": [
         {

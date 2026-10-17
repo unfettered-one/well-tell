@@ -49,6 +49,31 @@ export const visualSchema = z
       })
     }
   })
+
+// Read older explicit x/y string mappings without inferring roles from data.
+// Ambiguous legacy visuals remain safely unrenderable and show their table.
+export function normalizeLegacyVisual(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const visual = { ...raw } as Record<string, unknown>
+  if (visual.type === 'heatmap') {
+    if (typeof visual.x === 'string') {
+      visual.column ??= { field: visual.x }
+      delete visual.x
+    }
+    if (typeof visual.y === 'string') {
+      visual.row ??= { field: visual.y }
+      delete visual.y
+    }
+    if (typeof visual.value === 'string') visual.value = { field: visual.value }
+  } else {
+    if (typeof visual.x === 'string') visual.x = { field: visual.x }
+    if (typeof visual.y === 'string') visual.y = [{ field: visual.y }]
+    else if (Array.isArray(visual.y)) {
+      visual.y = visual.y.map((field) => (typeof field === 'string' ? { field } : field))
+    }
+  }
+  return visual
+}
 export type DisplayField = z.infer<typeof displayFieldSchema>
 export type Visual = z.infer<typeof visualSchema>
 export type DataRow = Record<string, unknown>

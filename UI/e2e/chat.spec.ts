@@ -5,7 +5,16 @@ test('captured real responses render all six visuals, follow-up context and iden
   page,
 }) => {
   const requests: Record<string, unknown>[] = []
-  const responses = Object.values(captures.responses)
+  const responses = Object.values(captures.responses) as unknown as {
+    answer: string
+    citations: string[]
+    visual: {
+      type: string
+      title: string
+      data: Record<string, unknown>[]
+      well_id?: string
+    }
+  }[]
   await page.route('**/health', (route) =>
     route.fulfill({
       json: {
@@ -54,6 +63,37 @@ test('captured real responses render all six visuals, follow-up context and iden
       page.getByRole('heading', { name: response.visual.title, exact: true }),
     ).toBeVisible()
     await expect(page.getByRole('textbox')).toHaveValue('')
+    const type = response.visual.type
+    const panel = page.locator('.assistant-message').last().locator('.visual-panel')
+    const message = page.locator('.assistant-message').last()
+    await expect(message.locator('.citation')).toHaveCount(response.citations.length)
+    for (const citation of response.citations) {
+      await expect(message.locator('.citation').filter({ hasText: citation })).toBeVisible()
+    }
+    if (type === 'status_card') await expect(panel.locator('.status-card')).toBeVisible()
+    if (type === 'table') {
+      await expect(panel.locator('table tbody tr').first()).toBeVisible()
+      const rowHeights = await panel
+        .locator('table tbody tr')
+        .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height))
+      expect(Math.max(...rowHeights)).toBeLessThan(180)
+    }
+    if (type === 'line' || type === 'bar') {
+      await expect(panel.locator('.recharts-surface[role="application"]')).toBeVisible()
+      const mark = panel.locator(type === 'line' ? '.recharts-dot' : '.recharts-rectangle').first()
+      await mark.hover()
+      await expect(panel.locator('.recharts-tooltip-wrapper')).toBeVisible()
+    }
+    if (type === 'map') {
+      await expect(panel.locator('.leaflet-container')).toBeVisible()
+      const marker = panel.locator('.leaflet-interactive').first()
+      await expect(marker).toBeVisible()
+      await marker.click()
+      await expect(panel.locator('.leaflet-popup-content')).toContainText(
+        String(response.visual.data[0][response.visual.well_id || 'asset_id']),
+      )
+    }
+    if (type === 'heatmap') await expect(panel.locator('.heatmap tbody tr').first()).toBeVisible()
   }
   await expect(page.getByRole('button', { name: /Northeast Block 7, 2026-01:/ })).toBeAttached()
   await page.getByRole('button', { name: /Northeast Block 7, 2026-01:/ }).click()

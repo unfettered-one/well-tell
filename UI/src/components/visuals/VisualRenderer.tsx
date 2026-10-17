@@ -1,7 +1,7 @@
 import { Component, lazy, Suspense } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { ChartNoAxesCombined, Database } from 'lucide-react'
-import { visualSchema } from '../../contracts'
+import { normalizeLegacyVisual, visualSchema } from '../../contracts'
 import type { DataRow, Visual } from '../../contracts'
 import { ResultsTable, DataTable } from './ResultsTable'
 import { WellStatusCard } from './WellStatusCard'
@@ -50,7 +50,7 @@ function Fallback({ reason, data }: { reason: string; data: DataRow[] }) {
 }
 export function VisualRenderer({ raw }: { raw: unknown }) {
   if (raw == null) return null
-  const parsed = visualSchema.safeParse(raw)
+  const parsed = visualSchema.safeParse(normalizeLegacyVisual(raw))
   if (!parsed.success)
     return (
       <section className="visual-panel">

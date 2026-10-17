@@ -79,7 +79,7 @@ def create_app(db_path: Path | None = None, bridge=None) -> FastAPI:
 
     def client():
         if api.state.bridge is None:
-            api.state.bridge = OpenCode(db_path, os.getenv("OPENCODE_MODEL", "github-copilot/gpt-6.1-sol#low"), timeout)
+            api.state.bridge = OpenCode(db_path, os.getenv("OPENCODE_MODEL", "opencode-go/gpt-6-luna#low"), timeout)
         return api.state.bridge
 
     @api.get("/health")

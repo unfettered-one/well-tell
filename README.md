@@ -25,18 +25,17 @@ opencode api get /api/info
 .venv/bin/python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
 ```
 
-The default model is `github-copilot/gpt-6.1-sol#low`, using the Copilot account
-already connected in OpenCode. If needed, open OpenCode, run `/connect`, select
-GitHub Copilot and finish its login. No provider secret belongs in this repo.
+The default model is `opencode-go/gpt-6-luna#low`, using the OpenCode Go provider
+available through an OpenCode subscription. If needed, connect OpenCode Go through
+OpenCode's `/connect` flow. No provider secret belongs in this repo.
 Set `OPENCODE_MODEL` in `.env` to another enabled tool-capable model. The API loads
 `.env` at startup; restart **the API** after changing it. New conversations use
 the selected model; existing conversations retain their OpenCode model.
 
-OpenCode free models remain selectable (for example `opencode/big-pickle`), but
-on the tested installation they returned provider HTTP 403, even through
-`opencode run`. The API does not silently switch providers or fabricate a reply.
-Adding a provider key to the API's `.env` alone does not update credentials in an
-already running OpenCode service: connect that provider using OpenCode `/connect`.
+Set `OPENCODE_MODEL=provider/model#variant` in `.env` to use another enabled
+OpenCode model. Adding a provider key to the API's `.env` alone does not update
+credentials in an already running OpenCode service: connect that provider using
+OpenCode `/connect`.
 
 ## Ask a question
 

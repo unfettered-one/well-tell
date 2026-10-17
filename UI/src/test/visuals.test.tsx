@@ -109,6 +109,34 @@ describe('real-response visual registry', () => {
     )
     expect(screen.getByText(/Limited result · 1 returned row\(s\) of 10/)).toBeInTheDocument()
   })
+  it('normalizes older explicit chart mappings without guessing columns', () => {
+    render(
+      <VisualRenderer
+        raw={{
+          type: 'line',
+          x: 'inspected_at',
+          y: ['eff_temp_delta_c'],
+          data: [{ inspected_at: '2026-10-15', eff_temp_delta_c: 4.1 }],
+        }}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'line' })).toBeInTheDocument()
+    expect(screen.queryByText(/Visual unavailable/)).not.toBeInTheDocument()
+  })
+  it('normalizes explicit historical heatmap mappings', () => {
+    render(
+      <VisualRenderer
+        raw={{
+          type: 'heatmap',
+          x: 'month',
+          y: 'area_name',
+          value: 'spill_count',
+          data: [{ month: '2026-10', area_name: 'Southwest', spill_count: 2 }],
+        }}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Southwest, 2026-10: 2' })).toBeInTheDocument()
+  })
   it('formats without changing raw values or multiplying percentages', () => {
     expect(formatValue(null)).toBe('Not available')
     expect(formatValue(0)).toBe('0')

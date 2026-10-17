@@ -56,8 +56,12 @@ async def main(args):
             print(f"PASS {name}: HTTP {response.status_code} ({result['seconds']}s)", flush=True)
             return answer
 
-        for kind, question in QUESTIONS:
+        selected = [item for item in QUESTIONS if not args.only or item[0] in args.only.split(",")]
+        for kind, question in selected:
             await ask(kind, question, expected=kind)
+        if args.only:
+            print(f"{len(results)} selected live visual checks passed; responses saved to {output.relative_to(ROOT)}", flush=True)
+            return
         # Fresh questions, not just golden sample queries. Follow-ups must reuse
         # the actual returned session, not substitute a new conversation.
         first = await ask("fresh", "What is the latest inspection evidence for WELL-0042? Show its status card.", expected="status_card")
@@ -67,7 +71,7 @@ async def main(args):
         assert empty["visual"]["data"] == []
         if args.allow_writes:
             corrected = await ask("correction", "The 15 Oct reading for WELL-0164 is wrong. The thermal gun was faulty; the crew re-measured the wellhead at 41.0 °C. Record this correction and say if it is producing now.")
-            assert re.search(r"COR-\d+", json.dumps(corrected)), corrected
+            assert re.search(r"COR-(?:RT-)?\d+", json.dumps(corrected)), corrected
             other = await ask("shared_correction_other_user", "Is WELL-0164 producing? Identify the stored correction and its author.", user="U-202")
             assert "41" in json.dumps(other) and "COR-" in json.dumps(other)
             await ask("private_memory", "Remember privately for me: I prefer temperature summaries in Celsius and concise bullet points.")
@@ -84,4 +88,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-url", default="http://127.0.0.1:8000")
     parser.add_argument("--allow-writes", action="store_true", help="Confirm this is a disposable DB; test correction/private memory writes")
+    parser.add_argument("--only", help="Run selected visual type(s), e.g. heatmap or line,map")
     asyncio.run(main(parser.parse_args()))

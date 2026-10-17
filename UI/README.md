@@ -7,7 +7,8 @@ retrieval, citations, memory and audited feedback remain the source of truth.
 ## Run locally
 
 Requires Node **22.12+**, the repository's Python environment, an ingested DB and
-the existing authenticated OpenCode service. No provider secrets go in the UI.
+the existing OpenCode Go subscription/provider. The default backend model is
+`opencode-go/gpt-6-luna#low`. No provider secrets go in the UI.
 
 From the repository root, start the backend:
 
@@ -118,7 +119,8 @@ For fresh end-to-end provider/MCP checks, build a **disposable** DB from the roo
 
 ```bash
 .venv/bin/python ingest/ingest.py --data dataset/flytbase-ahc-swe-asset-intelligence-dataset/sample-data --dataset sample --db data/ui-verification.db
-WELL_COPILOT_DB=data/ui-verification.db .venv/bin/python -m uvicorn backend.api:app --host 127.0.0.1 --port 8001
+.venv/bin/python ingest/ingest.py --data dataset/flytbase-ahc-swe-asset-intelligence-dataset/sample-data --dataset test --db data/ui-verification.db --as-of 2026-10-10
+OPENCODE_MODEL='opencode-go/gpt-6-luna#low' WELL_COPILOT_DB=data/ui-verification.db .venv/bin/python -m uvicorn backend.api:app --host 127.0.0.1 --port 8001
 ```
 
 Then, in another terminal from the root:

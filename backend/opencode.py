@@ -13,9 +13,12 @@ import os
 import sys
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from backend.visuals import Visual
 
 ROOT = Path(__file__).resolve().parent.parent
+MESSAGE_PAGE_SIZE = 5  # Keep each `opencode api` JSON response below its stdout cap.
 
 
 class UpstreamError(RuntimeError):
@@ -134,7 +137,7 @@ class OpenCode:
             raise
         # Read only this turn, even on long, paginated conversations.
         collected = []
-        path = f"/api/session/{session}/message?order=desc&limit=100"
+        path = f"/api/session/{session}/message?order=desc&limit={MESSAGE_PAGE_SIZE}"
         while path:
             page = await self.request("get", path)
             for message in page["data"]:
@@ -144,7 +147,7 @@ class OpenCode:
             cursor = page.get("cursor", {}).get("next")
             if cursor:
                 from urllib.parse import quote
-                path = f"/api/session/{session}/message?limit=100&cursor={quote(cursor, safe='')}"
+                path = f"/api/session/{session}/message?limit={MESSAGE_PAGE_SIZE}&cursor={quote(cursor, safe='')}"
             else:
                 path = None
         raise UpstreamError("OpenCode did not return the admitted conversation turn")
@@ -194,7 +197,14 @@ def parse_answer(messages: list[dict]) -> dict:
                 or not all(isinstance(row, dict) for row in visual["data"])):
             raise ValueError
         if visual is not None:
-            Visual.model_validate(visual)
+            try:
+                Visual.model_validate(visual)
+            except ValidationError:
+                # Detailed display metadata is soft-validated so a bad chart
+                # mapping cannot discard a verified answer or its citations.
+                # Keep the basic visual payload; the UI validates it again and
+                # shows readable returned rows instead of guessing fields.
+                pass
     except (ValueError, KeyError, TypeError) as exc:
         raise UpstreamError("Model returned malformed answer JSON; retry or select another free model") from exc
     evidence_text = "\n".join(evidence)

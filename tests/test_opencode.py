@@ -47,8 +47,10 @@ def test_turn_pagination_excludes_previous_answers(tmp_path):
             if path.endswith("/wait"):
                 return None
             if "cursor=" in path:
+                assert "limit=5" in path
                 return {"data": [{"id": "tool"}, {"id": "current-user"}, {"id": "old-answer"}],
                         "cursor": {"next": None}}
+            assert "limit=5" in path
             return {"data": [{"id": "latest-answer"}], "cursor": {"next": "opaque/+="}}
 
     bridge = Stub(tmp_path / "db.sqlite", "provider/model")
@@ -77,6 +79,22 @@ def test_missing_recall_is_not_silently_accepted():
     ]}]
     with pytest.raises(UpstreamError, match="recall"):
         parse_answer(messages)
+
+
+def test_invalid_optional_display_mapping_does_not_discard_verified_answer():
+    messages = [{"type": "assistant", "content": [
+        {"type": "tool", "name": "well_recall", "state": {"status": "completed", "content": [{"type": "text", "text": "{}"}]}},
+        {"type": "tool", "name": "well_query_db", "state": {"status": "completed", "content": [{"type": "text", "text": "INS-0001-0203"}]}},
+        {"type": "text", "text": json.dumps({
+            "answer": "Verified inspection finding",
+            "citations": ["INS-0001-0203"],
+            "visual": {"type": "line", "x": {"field": "invented"}, "data": [{"days": 7}]},
+        })},
+    ]}]
+    result = parse_answer(messages)
+    assert result["answer"] == "Verified inspection finding"
+    assert result["citations"] == ["INS-0001-0203"]
+    assert result["visual"]["x"]["field"] == "invented"
 
 
 def test_cold_start_waits_for_mcp_catalog_before_model_creation(tmp_path):
